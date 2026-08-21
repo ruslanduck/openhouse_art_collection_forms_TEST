@@ -11,6 +11,7 @@ const ENV = {
   },
   test: {
     GET:    'https://hook.us2.make.com/ueh7ll5kvjqxxt9whr4bwd3mwn4vfiyl',
+    // SUBMIT обязательно заменить на вебхук клона сценария B (он пишет в Airtable!)
     SUBMIT: 'PASTE_TEST_SUBMIT_WEBHOOK_HERE',
     FOLDER: '/Artwork Orders TEST',
   },
