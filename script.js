@@ -572,13 +572,14 @@ function buildProductCard(group, index) {
     `<button type="button" class="toggle-btn" data-value="${esc(type)}">${esc(type)}</button>`
   ).join('');
 
-  // Эйбров над названием: цвет + (если строк больше одной) количество размеров
-  const eyebrowParts = [];
-  if (group.color)               eyebrowParts.push(group.color);
+  // Цвет идёт в название карточки; эйбров сверху — только количество строк
+  const cardTitle = [group.productName || 'Unnamed Product', group.color]
+    .filter(Boolean)
+    .join(' — ');
+
   const itemCount = (group.uniqueProducts || group.products).length;
-  if (itemCount > 1) eyebrowParts.push(`${itemCount} items`);
-  const counterHtml = eyebrowParts.length
-    ? `<span class="product-card__counter">${esc(eyebrowParts.join(' · '))}</span>`
+  const counterHtml = itemCount > 1
+    ? `<span class="product-card__counter">${itemCount} items</span>`
     : '';
 
   const card = document.createElement('div');
@@ -591,7 +592,7 @@ function buildProductCard(group, index) {
       <div class="product-card__thumb" aria-hidden="true">${thumbHtml}</div>
       <div class="product-card__info">
         ${counterHtml}
-        <span class="product-card__name">${esc(group.productName) || 'Unnamed Product'}</span>
+        <span class="product-card__name">${esc(cardTitle)}</span>
       </div>
       <span class="status-badge status-badge--pending">Pending</span>
       <svg class="product-card__chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
