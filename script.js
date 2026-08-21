@@ -10,7 +10,9 @@ const ENV = {
     FOLDER: '/Artwork Orders',
   },
   test: {
-    GET:    'https://hook.us2.make.com/ueh7ll5kvjqxxt9whr4bwd3mwn4vfiyl',
+    // GET безопасно оставить продакшн — он только читает Airtable.
+    // Если склонируешь и сценарий A — подставь сюда новый URL.
+    GET:    'https://hook.us2.make.com/bj7rkp54m58ktvgg5xewf7d9q7wpkwiw',
     // SUBMIT обязательно заменить на вебхук клона сценария B (он пишет в Airtable!)
     SUBMIT: 'PASTE_TEST_SUBMIT_WEBHOOK_HERE',
     FOLDER: '/Artwork Orders TEST',
@@ -233,6 +235,7 @@ function normaliseOrder(raw) {
       colorLabel,
       sizeLabel,
       size:              sizeLine,
+      lineItemId:        firstString(p['Line Item ID']),
       photoUrl,
       thumbnail,
       hasVariantImage:   !!pickAttachment(p, VARIANT_IMAGE_KEYS),
@@ -273,8 +276,22 @@ function normaliseOrder(raw) {
   groups.forEach(g => {
     const vals = f => g.products.map(p => p[f]).filter(Boolean);
 
+    // В Airtable встречаются дубли строк заказа: одинаковый Line Item ID,
+    // разные recordID. Для количества и размеров считаем каждую строку один раз,
+    // но recordID сохраняем все — иначе writeback пропустит запись-двойника.
+    const seenLines = new Set();
+    g.uniqueProducts = g.products.filter(p => {
+      const key = p.lineItemId || `${p.sizeLabel}|${p.size}|${p.qty}`;
+      if (seenLines.has(key)) return false;
+      seenLines.add(key);
+      return true;
+    });
+    g.duplicateCount = g.products.length - g.uniqueProducts.length;
+
+    const uVals = f => g.uniqueProducts.map(p => p[f]).filter(Boolean);
+
     // QTY: суммируем, если все значения числовые, иначе перечисляем
-    const qtyRaw  = vals('qty');
+    const qtyRaw  = uVals('qty');
     const qtyNums = qtyRaw.map(toNum).filter(n => n !== null);
     g.qty = (qtyNums.length && qtyNums.length === qtyRaw.length)
       ? String(qtyNums.reduce((a, b) => a + b, 0))
@@ -283,7 +300,7 @@ function normaliseOrder(raw) {
     g.variant = g.color;
 
     // Size Breakdown — только размеры этого цвета, в человеческом порядке
-    g.size = [...new Set(vals('size'))]
+    g.size = [...new Set(uVals('size'))]
       .sort((a, b) => sizeRank(a) - sizeRank(b))
       .join(' / ');
 
@@ -436,6 +453,8 @@ async function loadOrder() {
       product:  g.productName,
       color:    g.color,
       lineItems: g.products.length,
+      unique:   (g.uniqueProducts || g.products).length,
+      dupes:    g.duplicateCount || 0,
       qty:      g.qty,
       size:     g.size,
       leadTime: g.leadTime,
@@ -558,7 +577,8 @@ function buildProductCard(group, index) {
   // Эйбров над названием: цвет + (если строк больше одной) количество размеров
   const eyebrowParts = [];
   if (group.color)               eyebrowParts.push(group.color);
-  if (group.products.length > 1) eyebrowParts.push(`${group.products.length} items`);
+  const itemCount = (group.uniqueProducts || group.products).length;
+  if (itemCount > 1) eyebrowParts.push(`${itemCount} items`);
   const counterHtml = eyebrowParts.length
     ? `<span class="product-card__counter">${esc(eyebrowParts.join(' · '))}</span>`
     : '';
