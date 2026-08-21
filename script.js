@@ -10,9 +10,7 @@ const ENV = {
     FOLDER: '/Artwork Orders',
   },
   test: {
-    // GET безопасно оставить продакшн — он только читает Airtable.
-    // Если склонируешь и сценарий A — подставь сюда новый URL.
-    GET:    'https://hook.us2.make.com/bj7rkp54m58ktvgg5xewf7d9q7wpkwiw',
+    GET:    'https://hook.us2.make.com/ueh7ll5kvjqxxt9whr4bwd3mwn4vfiyl',
     // SUBMIT обязательно заменить на вебхук клона сценария B (он пишет в Airtable!)
     SUBMIT: 'PASTE_TEST_SUBMIT_WEBHOOK_HERE',
     FOLDER: '/Artwork Orders TEST',
