@@ -9,11 +9,12 @@ const ENV = {
     SUBMIT: 'https://hook.us2.make.com/yhpis63d8gjb941ouh2t6jkw9f4iw28v',
     FOLDER: '/Artwork Orders',
   },
- test: {
-  GET:    'https://hook.us2.make.com/ueh7ll5kvjqxxt9whr4bwd3mwn4vfiyl',
-  SUBMIT: 'PASTE_TEST_SUBMIT_WEBHOOK_HERE',
-  FOLDER: '/Artwork Orders TEST',
-},
+  test: {
+    GET:    'https://hook.us2.make.com/ueh7ll5kvjqxxt9whr4bwd3mwn4vfiyl',
+    SUBMIT: 'PASTE_TEST_SUBMIT_WEBHOOK_HERE',
+    FOLDER: '/Artwork Orders TEST',
+  },
+};
 
 const ACTIVE = TEST_MODE ? ENV.test : ENV.prod;
 
