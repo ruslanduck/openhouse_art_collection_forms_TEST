@@ -73,6 +73,7 @@ function createProductState() {
     status:          'pending',
     skipped:         false,
     isReorder:       false,
+    rightsConfirmed: false,
   };
 }
 
@@ -725,6 +726,15 @@ function buildProductCard(group, index) {
 
         </div><!-- /client-fields -->
 
+        <div class="field-group rights-check" id="field-rights-${index}">
+          <label class="reorder-label" for="rights-cb-${index}">
+            <input type="checkbox" id="rights-cb-${index}" class="reorder-cb">
+            <span>I own or have permission to use the artwork, logos, and trademarks in this file, and Openhouse may embellish them on this order.</span>
+          </label>
+          <p class="field-hint">Your artwork stays yours. We print what you approve and do not check files for third-party rights. If a claim arises from artwork you send us, it is your responsibility. We may decline any file.</p>
+          <p class="field-error" id="error-rights-${index}" role="alert" hidden></p>
+        </div>
+
         <div class="skip-confirm" id="skip-confirm-${index}" hidden>
           <p class="skip-confirm__title">Skip embellishment?</p>
           <p class="skip-confirm__body">The product will be placed without embellishment. Are you sure you want to continue?</p>
@@ -736,7 +746,7 @@ function buildProductCard(group, index) {
 
         <div class="product-card__footer" id="footer-${index}">
           <button type="button" class="skip-btn" id="skip-btn-${index}">Skip</button>
-          <button type="button" class="submit-product-btn" id="submit-product-${index}">
+          <button type="button" class="submit-product-btn" id="submit-product-${index}" disabled>
             Submit Product
           </button>
         </div>
@@ -820,6 +830,14 @@ function initProductCard(card, index) {
     });
   });
 
+  // Rights confirmation — блокирует Submit, пока не отмечен
+  const rightsCb = card.querySelector(`#rights-cb-${index}`);
+  rightsCb.addEventListener('change', () => {
+    state.productStates[index].rightsConfirmed = rightsCb.checked;
+    if (rightsCb.checked) clearFieldError(index, 'rights');
+    updateSubmitEnabled(index);
+  });
+
   // Skip → show confirmation, hide footer
   card.querySelector(`#skip-btn-${index}`).addEventListener('click', () => {
     card.querySelector(`#skip-confirm-${index}`).removeAttribute('hidden');
@@ -837,6 +855,15 @@ function initProductCard(card, index) {
 
   // Submit
   card.querySelector(`#submit-product-${index}`).addEventListener('click', () => submitProduct(index));
+}
+
+// Submit доступен только если подтверждены права на артворк
+// (или продукт помечен как blank через Skip — тогда артворка нет вовсе)
+function updateSubmitEnabled(index) {
+  const ps  = state.productStates[index];
+  const btn = document.getElementById(`submit-product-${index}`);
+  if (!ps || !btn) return;
+  btn.disabled = !(ps.skipped || ps.rightsConfirmed);
 }
 
 // ─── EXPAND / COLLAPSE ────────────────────────────────────────────────────────
@@ -967,7 +994,7 @@ function validateProduct(index) {
   const ps = state.productStates[index];
   let valid = true;
 
-  ['files', 'colors', 'placement', 'embellishment'].forEach(f => clearFieldError(index, f));
+  ['files', 'colors', 'placement', 'embellishment', 'rights'].forEach(f => clearFieldError(index, f));
 
   const placement = (document.getElementById(`input-placement-${index}`)?.value || '').trim();
 
@@ -987,6 +1014,11 @@ function validateProduct(index) {
 
     if (!ps.embellishment) {
       showFieldError(index, 'embellishment', 'Please select an embellishment type.');
+      valid = false;
+    }
+
+    if (!ps.rightsConfirmed) {
+      showFieldError(index, 'rights', 'Please confirm you have the rights to use this artwork.');
       valid = false;
     }
   }
@@ -1116,6 +1148,8 @@ function skipProduct(index) {
   card.querySelector(`#skip-banner-${index}`).removeAttribute('hidden');
   card.querySelector(`#client-fields-${index}`).setAttribute('hidden', '');
   card.querySelector(`#reorder-check-${index}`).setAttribute('hidden', '');
+  card.querySelector(`#field-rights-${index}`).setAttribute('hidden', '');
+  updateSubmitEnabled(index);
 }
 
 // ─── SUBMIT PRODUCT ───────────────────────────────────────────────────────────
@@ -1224,8 +1258,8 @@ async function submitProduct(index) {
     console.error('[submitProduct]', err);
     setProductStatus(index, 'in-progress');
     expandProduct(index);
-    btn.disabled    = false;
     btn.textContent = 'Submit Product';
+    updateSubmitEnabled(index);
     if (errEl) { errEl.textContent = 'Something went wrong. Please try again.'; errEl.removeAttribute('hidden'); }
   }
 }
