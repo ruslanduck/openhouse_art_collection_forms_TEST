@@ -8,12 +8,16 @@ const ENV = {
     GET:    'https://hook.us2.make.com/bj7rkp54m58ktvgg5xewf7d9q7wpkwiw',
     SUBMIT: 'https://hook.us2.make.com/yhpis63d8gjb941ouh2t6jkw9f4iw28v',
     LOG:    'https://hook.us2.make.com/snqik9c4p8r2i5xvcm5l48ietuaumi65',
+    // Поиск прошлых Design Requests для re-order. Пока не заполнено —
+    // галка re-order работает по-старому, без выбора прошлого пруфа.
+    DESIGN: 'PASTE_PROD_DESIGN_REQUESTS_WEBHOOK_HERE',
     FOLDER: '/Artwork Orders',
   },
   test: {
     GET:    'https://hook.us2.make.com/ueh7ll5kvjqxxt9whr4bwd3mwn4vfiyl',
     SUBMIT: 'https://hook.us2.make.com/dq4b9ich5wdsdjidhk0smh6w9svh5uu2',
     LOG:    'https://hook.us2.make.com/snqik9c4p8r2i5xvcm5l48ietuaumi65',
+    DESIGN: 'https://hook.us2.make.com/4jlf5yntgjnxwef1q982urdcpis1xth5',
     FOLDER: '/Artwork Orders TEST',
   },
 };
@@ -25,6 +29,9 @@ const CONFIG = {
   MAKE_GET_WEBHOOK:      ACTIVE.GET,
   MAKE_SUBMIT_WEBHOOK:   ACTIVE.SUBMIT,
   MAKE_VIEW_LOG_WEBHOOK: ACTIVE.LOG,
+  MAKE_DESIGN_REQUESTS_WEBHOOK: ACTIVE.DESIGN,
+  // Прокси для рендера PDF/.ai превью в браузере
+  IMAGE_PROXY:           'https://wsrv.nl/?url=',
   DROPBOX_APP_KEY:       'swz1bzruuwvzkop',
   DROPBOX_APP_SECRET:    'bndcd2tbdztq3yh',
   DROPBOX_REFRESH_TOKEN: '5nl_-90oG0kAAAAAAAAAAYe9LQrN-pHIEo01fbfcgbjd9M6Fds4r3cao2RdT6kLu',
@@ -77,6 +84,9 @@ function createProductState() {
     skipped:         false,
     isReorder:       false,
     rightsConfirmed: false,
+    reorderRequests:  null,   // null = ещё не запрашивали, [] = ничего не найдено
+    reorderLoading:   false,
+    reorderSelectedId: null,
   };
 }
 
@@ -237,6 +247,7 @@ function normaliseOrder(raw) {
       sizeLabel,
       size:              sizeLine,
       lineItemId:        firstString(p['Line Item ID']),
+      productRecIds:     Array.isArray(p['Products_new']) ? p['Products_new'].filter(Boolean) : [],
       photoUrl,
       thumbnail,
       hasVariantImage:   !!pickAttachment(p, VARIANT_IMAGE_KEYS),
@@ -324,6 +335,10 @@ function normaliseOrder(raw) {
 
     g.allSubmitted = g.products.every(p => p.artworkSubmission);
 
+    // record id продуктов группы — по ним ищем прошлые Design Requests
+    g.productRecIds = [...new Set(g.products.flatMap(p => p.productRecIds))];
+    g.lineItemRecIds = [...new Set(g.products.map(p => p.recordId).filter(Boolean))];
+
     // Имя папки Dropbox — с цветом, чтобы файлы разных колорвеев не смешивались
     g.folderLabel = [g.productName, g.color].filter(Boolean).join(' - ');
   });
@@ -361,6 +376,178 @@ function escapeControlChars(text) {
     out += ch;
   }
   return out;
+}
+
+// ─── RE-ORDER: ВЫБОР ПРОШЛОГО DESIGN REQUEST ─────────────────────────────────
+// Стили инжектим из JS, чтобы не трогать style.css
+function injectReorderStyles() {
+  if (document.getElementById('oh-reorder-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'oh-reorder-styles';
+  st.textContent = `
+    .reorder-picker__status { font-size: 13px; color: #8A8578; margin: 4px 0 12px; }
+    .reorder-picker__empty  { font-size: 13px; color: #A8432B; margin: 4px 0 12px; }
+    .reorder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                    gap: 12px; margin-top: 8px; }
+    .rq-card { position: relative; border: 1px solid #DDD8CC; border-radius: 6px;
+               background: #FCFBF7; padding: 10px; cursor: pointer; display: block;
+               transition: border-color .15s, box-shadow .15s; }
+    .rq-card:hover { border-color: #B5AE9C; }
+    .rq-card.is-selected { border-color: #1A1A1A; box-shadow: 0 0 0 1px #1A1A1A inset; }
+    .rq-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .rq-card__thumb { width: 100%; aspect-ratio: 1 / 1; background: #EAE7DF; border-radius: 4px;
+                      display: flex; align-items: center; justify-content: center;
+                      overflow: hidden; margin-bottom: 8px; }
+    .rq-card__thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .rq-card__thumb span { font-size: 10px; letter-spacing: .08em; color: #A39C8A; }
+    .rq-card__name { display: block; font-size: 13px; font-weight: 600; line-height: 1.3;
+                     margin-bottom: 3px; }
+    .rq-card__meta { display: block; font-size: 11px; color: #8A8578; line-height: 1.4; }
+    .rq-card__link { display: inline-block; margin-top: 6px; font-size: 11px;
+                     text-decoration: underline; color: #1A1A1A; }
+  `;
+  document.head.appendChild(st);
+}
+
+// Превью пруфа: вложение рендерим напрямую, PDF/.ai — через прокси.
+// Если пруф был отправлен ссылкой, картинки нет — показываем плейсхолдер и кнопку.
+function proofThumbHtml(rq) {
+  const fileUrl = rq.proofThumbUrl || rq.proofFileUrl || '';
+
+  if (fileUrl) {
+    const needsProxy = /\.(pdf|ai|eps)(\?|$)/i.test(fileUrl);
+    const src = needsProxy
+      ? CONFIG.IMAGE_PROXY + encodeURIComponent(fileUrl) + '&w=400&output=jpg'
+      : fileUrl;
+    return `<div class="rq-card__thumb"><img src="${esc(src)}" alt="" loading="lazy"></div>`;
+  }
+
+  return `<div class="rq-card__thumb"><span>PROOF LINK</span></div>`;
+}
+
+function buildRequestCard(rq, index) {
+  const meta = [
+    rq.orderNumber ? 'Order #' + rq.orderNumber : '',
+    rq.productName || '',
+    formatDate(rq.date) || '',
+  ].filter(Boolean).join(' · ');
+
+  const linkUrl = rq.proofUrl || rq.proofFileUrl || '';
+  const linkHtml = linkUrl
+    ? `<a href="${esc(linkUrl)}" target="_blank" rel="noopener" class="rq-card__link">View proof</a>`
+    : '';
+
+  return `
+    <label class="rq-card" data-id="${esc(rq.id)}">
+      <input type="radio" name="reorder-request-${index}" value="${esc(rq.id)}">
+      ${proofThumbHtml(rq)}
+      <span class="rq-card__name">${esc(rq.requestName || 'Previous design')}</span>
+      <span class="rq-card__meta">${esc(meta)}</span>
+      ${linkHtml}
+    </label>
+  `;
+}
+
+function renderReorderPicker(index) {
+  const box = document.getElementById(`reorder-picker-${index}`);
+  if (!box) return;
+  const ps = state.productStates[index];
+
+  if (ps.reorderLoading) {
+    box.innerHTML = `<p class="reorder-picker__status">Looking up your previous designs…</p>`;
+    return;
+  }
+
+  if (!Array.isArray(ps.reorderRequests)) { box.innerHTML = ''; return; }
+
+  if (ps.reorderRequests.length === 0) {
+    box.innerHTML = `<p class="reorder-picker__empty">No previous completed design requests were found for this product.</p>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="field-label-row">
+      <span class="field-label">Select Previous Design</span>
+      <span class="badge badge--required">Mandatory</span>
+    </div>
+    <div class="reorder-grid">
+      ${ps.reorderRequests.map(rq => buildRequestCard(rq, index)).join('')}
+    </div>
+    <p class="field-error" id="error-reorder-${index}" role="alert" hidden></p>
+  `;
+
+  box.querySelectorAll('.rq-card').forEach(card => {
+    card.addEventListener('click', () => {
+      box.querySelectorAll('.rq-card').forEach(c => c.classList.remove('is-selected'));
+      card.classList.add('is-selected');
+      const input = card.querySelector('input');
+      if (input) input.checked = true;
+      ps.reorderSelectedId = card.dataset.id;
+      clearFieldError(index, 'reorder');
+      updateSubmitEnabled(index);
+    });
+    // клик по ссылке не должен выбирать карточку
+    card.querySelectorAll('a').forEach(a =>
+      a.addEventListener('click', e => e.stopPropagation()));
+  });
+}
+
+async function loadReorderRequests(index) {
+  const ps    = state.productStates[index];
+  const group = state.orderData.groups[index];
+
+  if (Array.isArray(ps.reorderRequests)) { renderReorderPicker(index); return; }
+
+  if (!/^https?:\/\//.test(CONFIG.MAKE_DESIGN_REQUESTS_WEBHOOK)) {
+    console.warn('[reorder] webhook не настроен — выбор прошлых дизайнов пропущен');
+    ps.reorderRequests = [];
+    renderReorderPicker(index);
+    updateSubmitEnabled(index);
+    return;
+  }
+
+  ps.reorderLoading = true;
+  renderReorderPicker(index);
+  updateSubmitEnabled(index);
+
+  try {
+    const res = await fetch(CONFIG.MAKE_DESIGN_REQUESTS_WEBHOOK, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        orderId:        new URLSearchParams(window.location.search).get('orderId') || '',
+        orderNumber:    state.orderData.orderNumber,
+        productName:    group.productName,
+        productRecIds:  group.productRecIds,
+        lineItemRecIds: group.lineItemRecIds,
+      }),
+    });
+
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const text = await res.text();
+    console.log('[reorder] raw response:', text);
+
+    let data = {};
+    try { data = JSON.parse(escapeControlChars(repairJson(text))); }
+    catch { throw new Error('Invalid JSON from design requests webhook'); }
+
+    const list = Array.isArray(data) ? data
+               : Array.isArray(data.requests) ? data.requests
+               : [];
+
+    // отбрасываем записи без какого-либо пруфа — выбирать там нечего
+    ps.reorderRequests = list.filter(rq =>
+      rq && (rq.proofUrl || rq.proofFileUrl || rq.proofThumbUrl));
+
+  } catch (err) {
+    console.error('[reorder] lookup failed:', err);
+    ps.reorderRequests = [];
+  } finally {
+    ps.reorderLoading = false;
+    renderReorderPicker(index);
+    updateSubmitEnabled(index);
+  }
 }
 
 // ─── VIEW LOGGING ─────────────────────────────────────────────────────────────
@@ -751,6 +938,8 @@ function buildProductCard(group, index) {
           </label>
         </div>
 
+        <div class="field-group" id="reorder-picker-${index}" hidden></div>
+
         <div class="skip-banner" id="skip-banner-${index}" hidden>
           <p>Blank product selected — no artwork or embellishment will be applied.</p>
         </div>
@@ -931,6 +1120,21 @@ function initProductCard(card, index) {
       badge.classList.toggle('badge--required', !isReorder);
       clearFieldError(index, field);
     });
+
+    // При re-order артворк берётся из прошлого пруфа: файлы, цвет нанесения
+    // и placement скрываем, вместо них — выбор прошлого Design Request.
+    // Additional Notes и подтверждение прав остаются.
+    setReorderFieldsHidden(index, isReorder);
+
+    if (isReorder) {
+      loadReorderRequests(index);
+    } else {
+      state.productStates[index].reorderSelectedId = null;
+      clearFieldError(index, 'reorder');
+      renderReorderPicker(index);
+    }
+
+    updateSubmitEnabled(index);
   });
 
   // Rights confirmation — блокирует Submit, пока не отмечен
@@ -960,13 +1164,38 @@ function initProductCard(card, index) {
   card.querySelector(`#submit-product-${index}`).addEventListener('click', () => submitProduct(index));
 }
 
+// При re-order прячем поля загрузки артворка и показываем контейнер выбора
+function setReorderFieldsHidden(index, isReorder) {
+  ['files', 'colors', 'placement'].forEach(field => {
+    const el = document.getElementById(`field-${field}-${index}`);
+    if (!el) return;
+    if (isReorder) el.setAttribute('hidden', '');
+    else           el.removeAttribute('hidden');
+  });
+
+  const picker = document.getElementById(`reorder-picker-${index}`);
+  if (picker) {
+    if (isReorder) picker.removeAttribute('hidden');
+    else           picker.setAttribute('hidden', '');
+  }
+}
+
 // Submit доступен только если подтверждены права на артворк
 // (или продукт помечен как blank через Skip — тогда артворка нет вовсе)
 function updateSubmitEnabled(index) {
   const ps  = state.productStates[index];
   const btn = document.getElementById(`submit-product-${index}`);
   if (!ps || !btn) return;
-  btn.disabled = !(ps.skipped || ps.rightsConfirmed);
+  if (ps.skipped) { btn.disabled = false; return; }
+
+  // при re-order ещё нужен выбранный прошлый дизайн (если он вообще нашёлся)
+  const needsPick = ps.isReorder
+    && (ps.reorderLoading
+        || (Array.isArray(ps.reorderRequests)
+            && ps.reorderRequests.length > 0
+            && !ps.reorderSelectedId));
+
+  btn.disabled = !ps.rightsConfirmed || needsPick;
 }
 
 // ─── EXPAND / COLLAPSE ────────────────────────────────────────────────────────
@@ -1097,7 +1326,8 @@ function validateProduct(index) {
   const ps = state.productStates[index];
   let valid = true;
 
-  ['files', 'colors', 'placement', 'embellishment', 'rights'].forEach(f => clearFieldError(index, f));
+  ['files', 'colors', 'placement', 'embellishment', 'rights', 'reorder']
+    .forEach(f => clearFieldError(index, f));
 
   const placement = (document.getElementById(`input-placement-${index}`)?.value || '').trim();
 
@@ -1127,6 +1357,14 @@ function validateProduct(index) {
       showFieldError(index, 'rights', 'Please confirm you have the rights to use this artwork.');
       valid = false;
     }
+  }
+
+  if (ps.isReorder
+      && Array.isArray(ps.reorderRequests)
+      && ps.reorderRequests.length > 0
+      && !ps.reorderSelectedId) {
+    showFieldError(index, 'reorder', 'Please select which previous design to reuse.');
+    valid = false;
   }
 
   const notes = (document.getElementById(`input-notes-${index}`)?.value || '').trim();
@@ -1255,6 +1493,7 @@ function skipProduct(index) {
   card.querySelector(`#client-fields-${index}`).setAttribute('hidden', '');
   card.querySelector(`#reorder-check-${index}`).setAttribute('hidden', '');
   card.querySelector(`#field-rights-${index}`).setAttribute('hidden', '');
+  card.querySelector(`#reorder-picker-${index}`).setAttribute('hidden', '');
   updateSubmitEnabled(index);
 }
 
@@ -1321,6 +1560,9 @@ async function submitProduct(index) {
         dropboxUrl = await uploadFileToDropbox(item.file, orderId, group.folderLabel || group.productName);
       }
 
+      const selectedRequest = (ps.reorderRequests || [])
+        .find(rq => rq.id === ps.reorderSelectedId);
+
       const colors          = document.getElementById(`input-colors-${index}`)?.value.trim() || '';
       const placement       = ps.placement || '';
       const embellishment   = ps.embellishment;
@@ -1336,6 +1578,9 @@ async function submitProduct(index) {
         isReorder: ps.isReorder,
         colors, placement, embellishment, additionalNotes,
         dropboxUrl,
+        reorderRequestId:   ps.reorderSelectedId || '',
+        reorderRequestName: selectedRequest?.requestName || '',
+        reorderProofUrl:    selectedRequest?.proofUrl || selectedRequest?.proofFileUrl || '',
       };
     }
 
@@ -1399,6 +1644,7 @@ async function testDropboxToken() {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   if (TEST_MODE) console.warn('[OPENHOUSE] TEST MODE — Dropbox folder:', CONFIG.DROPBOX_UPLOAD_FOLDER);
+  injectReorderStyles();
   loadOrder();
   document.getElementById('retry-load-btn')?.addEventListener('click', loadOrder);
 });
