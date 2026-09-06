@@ -404,6 +404,7 @@ function injectReorderStyles() {
     .rq-card__name { display: block; font-size: 13px; font-weight: 600; line-height: 1.3;
                      margin-bottom: 3px; }
     .rq-card__meta { display: block; font-size: 11px; color: #8A8578; line-height: 1.4; }
+    .rq-card__file { font-size: 10px; color: #A39C8A; word-break: break-all; margin-top: 2px; }
     .rq-card__link { display: inline-block; margin-top: 6px; font-size: 11px;
                      text-decoration: underline; color: #1A1A1A; }
   `;
@@ -433,6 +434,10 @@ function buildRequestCard(rq, index) {
     formatDate(rq.date) || '',
   ].filter(Boolean).join(' · ');
 
+  const fileHtml = rq.proofFileName
+    ? `<span class="rq-card__meta rq-card__file">${esc(rq.proofFileName)}</span>`
+    : '';
+
   const linkUrl = rq.proofUrl || rq.proofFileUrl || '';
   const linkHtml = linkUrl
     ? `<a href="${esc(linkUrl)}" target="_blank" rel="noopener" class="rq-card__link">View proof</a>`
@@ -444,6 +449,7 @@ function buildRequestCard(rq, index) {
       ${proofThumbHtml(rq)}
       <span class="rq-card__name">${esc(rq.requestName || 'Previous design')}</span>
       <span class="rq-card__meta">${esc(meta)}</span>
+      ${fileHtml}
       ${linkHtml}
     </label>
   `;
@@ -493,6 +499,32 @@ function renderReorderPicker(index) {
   });
 }
 
+// Ответ вебхука принимаем в двух видах: либо готовый контракт
+// (id/requestName/proofUrl...), либо сырые поля Airtable из агрегатора Make.
+function normaliseRequest(rq) {
+  if (!rq || typeof rq !== 'object') return null;
+
+  const attachment = firstAttachment(rq['Unsigned Proof'] ?? rq.unsignedProof);
+  const fileName = Array.isArray(rq['Unsigned Proof'])
+    ? (rq['Unsigned Proof'][0]?.filename || '')
+    : '';
+
+  const sentAsLinkRaw = rq.sentAsLink ?? rq['Proof Sent As Link'];
+
+  return {
+    id:            firstString(rq.id ?? rq.recordID ?? rq.recordId),
+    requestName:   firstString(rq.requestName ?? rq['Request Name']),
+    orderNumber:   firstString(rq.orderNumber ?? rq['Order']),
+    productName:   firstString(rq.productName ?? rq['Product Name']),
+    date:          firstString(rq.date ?? rq['Order Date']),
+    proofFileName: fileName || firstString(rq.proofFileName),
+    sentAsLink:    sentAsLinkRaw === true || sentAsLinkRaw === 'checked',
+    proofUrl:      firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link']),
+    proofFileUrl:  firstString(rq.proofFileUrl) || attachment?.url   || '',
+    proofThumbUrl: firstString(rq.proofThumbUrl) || attachment?.thumb || '',
+  };
+}
+
 async function loadReorderRequests(index) {
   const ps    = state.productStates[index];
   const group = state.orderData.groups[index];
@@ -538,9 +570,10 @@ async function loadReorderRequests(index) {
                : Array.isArray(data.requests) ? data.requests
                : [];
 
-    // отбрасываем записи без какого-либо пруфа — выбирать там нечего
-    ps.reorderRequests = list.filter(rq =>
-      rq && (rq.proofUrl || rq.proofFileUrl || rq.proofThumbUrl));
+    // приводим к единому виду и отбрасываем записи без пруфа и без id
+    ps.reorderRequests = list
+      .map(normaliseRequest)
+      .filter(rq => rq && rq.id && (rq.proofUrl || rq.proofFileUrl || rq.proofThumbUrl));
 
   } catch (err) {
     console.error('[reorder] lookup failed:', err);
