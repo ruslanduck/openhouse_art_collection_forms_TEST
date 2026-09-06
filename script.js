@@ -347,6 +347,7 @@ function normaliseOrder(raw) {
     orderNumber:     raw.order_number || raw.orderNumber || '',
     orderDate:       formatDate(raw.order_date || raw.orderDate || ''),
     client:          raw.client_name  || raw.client  || raw.client_id  || '',
+    customerId:      firstString(raw.customer_id ?? raw.customerId),
     shippingAddress: raw.shipping_address || raw.shippingAddress || '',
     formStatus:      raw.formStatus || raw.form_status || 'pending',
     groups,
@@ -517,6 +518,7 @@ async function loadReorderRequests(index) {
       body:    JSON.stringify({
         orderId:        new URLSearchParams(window.location.search).get('orderId') || '',
         orderNumber:    state.orderData.orderNumber,
+        customerId:     state.orderData.customerId,
         productName:    group.productName,
         productRecIds:  group.productRecIds,
         lineItemRecIds: group.lineItemRecIds,
