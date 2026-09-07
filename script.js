@@ -1,3 +1,7 @@
+// Версия файла — видна в консоли при загрузке страницы.
+// Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
+const OH_VERSION = '2026-09-06 reorder-cards, no filenames, empty-state fallback';
+
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
 // TEST_MODE = false → продакшн (оригинальный сценарий)
@@ -38,18 +42,6 @@ const CONFIG = {
   DROPBOX_UPLOAD_FOLDER: ACTIVE.FOLDER,
   ALLOWED_EXTENSIONS:    ['ai', 'eps', 'png', 'pdf'],
   MAX_FILE_SIZE_MB:      100,
-};
-
-// ─── ПОВЕДЕНИЕ RE-ORDER ─────────────────────────────────────────────────────
-const REORDER = {
-  // Поля, которые прячем при включённом re-order. Additional Notes остаётся всегда.
-  HIDDEN_FIELDS: ['files', 'colors', 'placement', 'embellishment'],
-  // Прятать ли подтверждение прав на артворк. Артворк уже наш и уже согласован,
-  // поэтому по умолчанию прячем. Поставь false — чекбокс останется на месте.
-  HIDE_RIGHTS: true,
-  // Требовать выбор прошлого дизайна. Если true и ничего не нашлось —
-  // клиент не сможет отправить re-order, ему предложат снять галку.
-  REQUIRE_SELECTION: true,
 };
 
 // Поля Airtable, в которых может лежать картинка варианта — проверяются по порядку.
@@ -359,7 +351,7 @@ function normaliseOrder(raw) {
     orderNumber:     raw.order_number || raw.orderNumber || '',
     orderDate:       formatDate(raw.order_date || raw.orderDate || ''),
     client:          raw.client_name  || raw.client  || raw.client_id  || '',
-    customerId:      firstString(raw.customer_id ?? raw.customerId ?? raw.client_id),
+    customerId:      firstString(raw.customer_id ?? raw.customerId),
     shippingAddress: raw.shipping_address || raw.shippingAddress || '',
     formStatus:      raw.formStatus || raw.form_status || 'pending',
     groups,
@@ -398,376 +390,141 @@ function injectReorderStyles() {
   const st = document.createElement('style');
   st.id = 'oh-reorder-styles';
   st.textContent = `
-    .rq-panel { margin-top: 4px; }
-    .rq-status { font-size: 13px; color: #8A8578; margin: 4px 0 12px; }
-    .rq-empty__title { font-size: 13px; font-weight: 600; color: #A8432B; margin: 0 0 4px; }
-    .rq-empty__body  { font-size: 12px; color: #8A8578; line-height: 1.5; margin: 0; }
-
-    .rq-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-    .rq-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-              border: 1px solid #DDD8CC; border-radius: 6px; background: #FCFBF7;
-              padding: 10px 12px; cursor: pointer; font: inherit; color: inherit;
-              transition: border-color .15s, background .15s; }
-    .rq-row:hover  { border-color: #B5AE9C; background: #FFFDF8; }
-    .rq-row:focus-visible { outline: 2px solid #1A1A1A; outline-offset: 2px; }
-    .rq-row.is-selected { border-color: #1A1A1A; box-shadow: 0 0 0 1px #1A1A1A inset; }
-
-    .rq-thumb { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 4px; background: #EAE7DF;
-                display: flex; align-items: center; justify-content: center; overflow: hidden; }
-    .rq-thumb img  { width: 100%; height: 100%; object-fit: contain; }
-    .rq-thumb span { font-size: 8px; letter-spacing: .08em; color: #A39C8A; text-align: center;
-                     line-height: 1.2; padding: 2px; }
-
-    .rq-row__text { flex: 1 1 auto; min-width: 0; }
-    .rq-row__name { display: block; font-size: 13px; font-weight: 600; line-height: 1.3;
-                    margin-bottom: 2px; overflow-wrap: anywhere; }
-    .rq-row__meta { display: block; font-size: 11px; color: #8A8578; line-height: 1.4;
-                    overflow-wrap: anywhere; }
-    .rq-row__cta  { flex: 0 0 auto; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
-                    color: #8A8578; white-space: nowrap; }
-    .rq-row.is-selected .rq-row__cta { color: #1A1A1A; font-weight: 600; }
-
-    /* Выбранный дизайн — сводка вместо списка */
-    .rq-chosen { display: flex; align-items: center; gap: 12px; border: 1px solid #1A1A1A;
-                 border-radius: 6px; background: #FCFBF7; padding: 12px; margin-top: 8px; }
-    .rq-chosen__tag { display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-                      color: #8A8578; margin-bottom: 3px; }
-    .rq-chosen__actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
-    .rq-btn { font: inherit; font-size: 11px; letter-spacing: .04em; padding: 6px 12px;
-              border-radius: 4px; cursor: pointer; white-space: nowrap; }
-    .rq-btn--ghost { background: transparent; border: 1px solid #DDD8CC; color: #1A1A1A; }
-    .rq-btn--ghost:hover { border-color: #1A1A1A; }
-    .rq-btn--solid { background: #1A1A1A; border: 1px solid #1A1A1A; color: #FFF; }
-    .rq-btn--solid:hover { background: #333; }
-
-    /* Модалка превью */
-    .rqm { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center;
-           justify-content: center; padding: 20px; }
-    .rqm[hidden] { display: none; }
-    .rqm__backdrop { position: absolute; inset: 0; background: rgba(20,19,16,.55); }
-    .rqm__dialog { position: relative; z-index: 1; background: #FCFBF7; border-radius: 8px;
-                   width: min(760px, 100%); max-height: min(88vh, 900px); display: flex;
-                   flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.28); overflow: hidden; }
-    .rqm__head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px;
-                 border-bottom: 1px solid #E6E1D6; }
-    .rqm__title { font-size: 15px; font-weight: 600; line-height: 1.3; margin: 0 0 3px;
-                  overflow-wrap: anywhere; }
-    .rqm__meta  { font-size: 12px; color: #8A8578; line-height: 1.4; margin: 0;
-                  overflow-wrap: anywhere; }
-    .rqm__close { flex: 0 0 auto; margin-left: auto; background: none; border: none; cursor: pointer;
-                  font-size: 22px; line-height: 1; color: #8A8578; padding: 0 2px; }
-    .rqm__close:hover { color: #1A1A1A; }
-    .rqm__body { flex: 1 1 auto; overflow: auto; padding: 18px; background: #F2EFE7; }
-    .rqm__foot { display: flex; align-items: center; gap: 10px; padding: 14px 18px;
-                 border-top: 1px solid #E6E1D6; }
-    .rqm__foot .rq-btn { font-size: 12px; padding: 9px 16px; }
-    .rqm__spacer { flex: 1 1 auto; }
-
-    .rqm-page { background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px; padding: 8px;
-                margin-bottom: 12px; }
-    .rqm-page:last-child { margin-bottom: 0; }
-    .rqm-page img { display: block; width: 100%; height: auto; }
-    .rqm-page__cap { display: flex; justify-content: space-between; align-items: center;
-                     font-size: 11px; color: #8A8578; margin-top: 6px; overflow-wrap: anywhere; }
-    .rqm-page__cap a { color: #1A1A1A; }
-    .rqm-fallback { font-size: 12px; color: #8A8578; text-align: center; padding: 28px 12px;
-                    line-height: 1.6; }
-    .rqm-linkbox { text-align: center; padding: 32px 16px; }
-    .rqm-linkbox__t { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
-    .rqm-linkbox__b { font-size: 12px; color: #8A8578; line-height: 1.5; margin: 0 0 16px; }
+    .reorder-picker__status { font-size: 13px; color: #8A8578; margin: 4px 0 12px; }
+    .reorder-picker__empty  { font-size: 13px; color: #A8432B; margin: 4px 0 12px; }
+    .reorder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                    gap: 12px; margin-top: 8px; }
+    .rq-card { position: relative; border: 1px solid #DDD8CC; border-radius: 6px;
+               background: #FCFBF7; padding: 10px; cursor: pointer; display: block;
+               transition: border-color .15s, box-shadow .15s; }
+    .rq-card:hover { border-color: #B5AE9C; }
+    .rq-card.is-selected { border-color: #1A1A1A; box-shadow: 0 0 0 1px #1A1A1A inset; }
+    .rq-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .rq-card__thumb { width: 100%; aspect-ratio: 1 / 1; background: #EAE7DF; border-radius: 4px;
+                      display: flex; align-items: center; justify-content: center;
+                      overflow: hidden; margin-bottom: 8px; }
+    .rq-card__thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .rq-card__thumb span { font-size: 10px; letter-spacing: .08em; color: #A39C8A; }
+    .rq-card__name { display: block; font-size: 13px; font-weight: 600; line-height: 1.3;
+                     margin-bottom: 3px; }
+    .rq-card__meta { display: block; font-size: 11px; color: #8A8578; line-height: 1.4; }
+    .rq-card__link { display: inline-block; margin-top: 6px; font-size: 11px;
+                     text-decoration: underline; color: #1A1A1A; }
   `;
   document.head.appendChild(st);
 }
 
-// ─── Превью-хелперы ──────────────────────────────────────────────────────────
-// Собирает ВСЕ вложения из значения Airtable (страницы пруфа), а не только первое.
-function allAttachments(v, out) {
-  out = out || [];
-  if (!v) return out;
+// Превью пруфа: вложение рендерим напрямую, PDF/.ai — через прокси.
+// Если пруф был отправлен ссылкой, картинки нет — показываем плейсхолдер и кнопку.
+function proofThumbHtml(rq) {
+  const fileUrl = rq.proofThumbUrl || rq.proofFileUrl || '';
 
-  if (typeof v === 'string') {
-    const s = v.trim();
-    if (s) out.push({ url: s, thumb: s, name: '' });
-    return out;
+  if (fileUrl) {
+    const needsProxy = /\.(pdf|ai|eps)(\?|$)/i.test(fileUrl);
+    const src = needsProxy
+      ? CONFIG.IMAGE_PROXY + encodeURIComponent(fileUrl) + '&w=400&output=jpg'
+      : fileUrl;
+    return `<div class="rq-card__thumb"><img src="${esc(src)}" alt="" loading="lazy"></div>`;
   }
 
-  if (Array.isArray(v)) { v.forEach(item => allAttachments(item, out)); return out; }
-
-  if (typeof v === 'object' && v.url) {
-    out.push({
-      url:   v.url,
-      thumb: v.thumbnails?.large?.url || v.thumbnails?.small?.url || v.url,
-      name:  v.filename || '',
-    });
-  }
-  return out;
+  return `<div class="rq-card__thumb"><span>PROOF LINK</span></div>`;
 }
 
-// PNG/JPG рендерим напрямую, PDF/AI/EPS/TIFF — через wsrv.nl
-function previewSrc(url, width) {
-  if (!url) return '';
-  if (/\.(png|jpe?g|gif|webp)(\?|$)/i.test(url)) return url;
-  return CONFIG.IMAGE_PROXY + encodeURIComponent(url) + '&w=' + width + '&output=jpg';
-}
-
-// Картинка для маленькой плашки в списке
-function rqThumbUrl(rq) {
-  return rq.attachments[0]?.thumb || rq.attachments[0]?.url || rq.mockupUrl || '';
-}
-
-function rqMetaLine(rq) {
-  return [
+function buildRequestCard(rq, index) {
+  const meta = [
     rq.orderNumber ? 'Order #' + rq.orderNumber : '',
     rq.productName || '',
-    rq.variant || '',
     formatDate(rq.date) || '',
   ].filter(Boolean).join(' · ');
+
+
+  const linkUrl = rq.proofUrl || rq.proofFileUrl || '';
+  const linkHtml = linkUrl
+    ? `<a href="${esc(linkUrl)}" target="_blank" rel="noopener" class="rq-card__link">View proof</a>`
+    : '';
+
+  return `
+    <label class="rq-card" data-id="${esc(rq.id)}">
+      <input type="radio" name="reorder-request-${index}" value="${esc(rq.id)}">
+      ${proofThumbHtml(rq)}
+      <span class="rq-card__name">${esc(rq.requestName || 'Previous design')}</span>
+      <span class="rq-card__meta">${esc(meta)}</span>
+      ${linkHtml}
+    </label>
+  `;
 }
 
-function rqThumbHtml(rq) {
-  const url = rqThumbUrl(rq);
-  if (url) {
-    return `<div class="rq-thumb"><img src="${esc(previewSrc(url, 200))}" alt="" loading="lazy"></div>`;
-  }
-  return `<div class="rq-thumb"><span>PROOF<br>LINK</span></div>`;
-}
-
-// ─── Рендер панели выбора ────────────────────────────────────────────────────
 function renderReorderPicker(index) {
   const box = document.getElementById(`reorder-picker-${index}`);
   if (!box) return;
   const ps = state.productStates[index];
 
-  if (!ps || !ps.isReorder) { box.innerHTML = ''; return; }
-
   if (ps.reorderLoading) {
-    box.innerHTML = `<div class="rq-panel"><p class="rq-status">Looking up your previous designs…</p></div>`;
+    box.innerHTML = `<p class="reorder-picker__status">Looking up your previous designs…</p>`;
     return;
   }
 
   if (!Array.isArray(ps.reorderRequests)) { box.innerHTML = ''; return; }
 
   if (ps.reorderRequests.length === 0) {
-    box.innerHTML = `
-      <div class="rq-panel">
-        <p class="rq-empty__title">No previous designs found for this product.</p>
-        <p class="rq-empty__body">We could not find an approved design for this product on your account.
-        Please untick “This is a re-order” above and upload your artwork instead.</p>
-      </div>`;
-    return;
-  }
-
-  const selected = ps.reorderRequests.find(rq => rq.id === ps.reorderSelectedId);
-
-  if (selected) {
-    box.innerHTML = `
-      <div class="rq-panel">
-        <div class="field-label-row">
-          <span class="field-label">Selected Previous Design</span>
-          <span class="badge badge--required">Mandatory</span>
-        </div>
-        <div class="rq-chosen">
-          ${rqThumbHtml(selected)}
-          <div class="rq-row__text">
-            <span class="rq-chosen__tag">Re-using</span>
-            <span class="rq-row__name">${esc(selected.requestName || 'Previous design')}</span>
-            <span class="rq-row__meta">${esc(rqMetaLine(selected))}</span>
-          </div>
-          <div class="rq-chosen__actions">
-            <button type="button" class="rq-btn rq-btn--ghost" data-rq-view="${esc(selected.id)}">View</button>
-            <button type="button" class="rq-btn rq-btn--ghost" data-rq-clear="1">Change</button>
-          </div>
-        </div>
-        <p class="field-error" id="error-reorder-${index}" role="alert" hidden></p>
-      </div>`;
-
-    box.querySelector('[data-rq-view]')?.addEventListener('click',
-      () => openProofModal(index, selected.id));
-    box.querySelector('[data-rq-clear]')?.addEventListener('click', () => {
-      ps.reorderSelectedId = null;
-      renderReorderPicker(index);
-      updateSubmitEnabled(index);
-    });
+    box.innerHTML = `<p class="reorder-picker__empty">We couldn't find any previously approved proofs for this product.<br>Please fill out the form below or contact us.</p>`;
+    // Пруфов нет — возвращаем поля загрузки артворка и делаем их снова обязательными,
+    // иначе клиент оказывается в тупике: выбрать нечего и загрузить некуда.
+    setReorderFieldsHidden(index, false);
+    setArtworkFieldsRequired(index, true);
     return;
   }
 
   box.innerHTML = `
-    <div class="rq-panel">
-      <div class="field-label-row">
-        <span class="field-label">Select Previous Design</span>
-        <span class="badge badge--required">Mandatory</span>
-      </div>
-      <p class="field-hint">Click a design to preview it, then confirm the one you want to re-order.</p>
-      <div class="rq-list">
-        ${ps.reorderRequests.map(rq => `
-          <button type="button" class="rq-row" data-rq-id="${esc(rq.id)}">
-            ${rqThumbHtml(rq)}
-            <span class="rq-row__text">
-              <span class="rq-row__name">${esc(rq.requestName || 'Previous design')}</span>
-              <span class="rq-row__meta">${esc(rqMetaLine(rq))}</span>
-            </span>
-            <span class="rq-row__cta">Preview</span>
-          </button>`).join('')}
-      </div>
-      <p class="field-error" id="error-reorder-${index}" role="alert" hidden></p>
-    </div>`;
+    <div class="field-label-row">
+      <span class="field-label">Select Previous Design</span>
+      <span class="badge badge--required">Mandatory</span>
+    </div>
+    <div class="reorder-grid">
+      ${ps.reorderRequests.map(rq => buildRequestCard(rq, index)).join('')}
+    </div>
+    <p class="field-error" id="error-reorder-${index}" role="alert" hidden></p>
+  `;
 
-  box.querySelectorAll('[data-rq-id]').forEach(row => {
-    row.addEventListener('click', () => openProofModal(index, row.dataset.rqId));
-  });
-}
-
-// ─── Модалка превью пруфа ────────────────────────────────────────────────────
-let _rqModal = null;
-
-function ensureProofModal() {
-  if (_rqModal) return _rqModal;
-
-  const el = document.createElement('div');
-  el.className = 'rqm';
-  el.id = 'oh-proof-modal';
-  el.setAttribute('hidden', '');
-  el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-modal', 'true');
-  el.innerHTML = `
-    <div class="rqm__backdrop" data-rqm-close="1"></div>
-    <div class="rqm__dialog">
-      <div class="rqm__head">
-        <div>
-          <p class="rqm__title" id="rqm-title"></p>
-          <p class="rqm__meta"  id="rqm-meta"></p>
-        </div>
-        <button type="button" class="rqm__close" data-rqm-close="1" aria-label="Close">&times;</button>
-      </div>
-      <div class="rqm__body" id="rqm-body"></div>
-      <div class="rqm__foot">
-        <button type="button" class="rq-btn rq-btn--ghost" data-rqm-close="1">Choose another</button>
-        <span class="rqm__spacer"></span>
-        <a class="rq-btn rq-btn--ghost" id="rqm-open" target="_blank" rel="noopener" hidden>Open proof</a>
-        <button type="button" class="rq-btn rq-btn--solid" id="rqm-confirm">Use this design</button>
-      </div>
-    </div>`;
-
-  document.body.appendChild(el);
-
-  el.querySelectorAll('[data-rqm-close]').forEach(b =>
-    b.addEventListener('click', closeProofModal));
-
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !el.hasAttribute('hidden')) closeProofModal();
-  });
-
-  _rqModal = el;
-  return el;
-}
-
-function closeProofModal() {
-  if (!_rqModal) return;
-  _rqModal.setAttribute('hidden', '');
-  _rqModal.querySelector('#rqm-body').innerHTML = '';
-  document.body.style.overflow = '';
-}
-
-function proofBodyHtml(rq) {
-  if (rq.attachments.length) {
-    const many = rq.attachments.length > 1;
-    return rq.attachments.map((a, i) => `
-      <div class="rqm-page">
-        <img src="${esc(previewSrc(a.url, 1200))}" alt="" data-rqm-src="${esc(a.url)}">
-        <div class="rqm-page__cap">
-          <span>${esc(a.name || (many ? `Page ${i + 1} of ${rq.attachments.length}` : 'Proof'))}</span>
-          <a href="${esc(a.url)}" target="_blank" rel="noopener">Open original</a>
-        </div>
-      </div>`).join('');
-  }
-
-  if (rq.mockupUrl) {
-    return `
-      <div class="rqm-page">
-        <img src="${esc(previewSrc(rq.mockupUrl, 1200))}" alt="" data-rqm-src="${esc(rq.mockupUrl)}">
-        <div class="rqm-page__cap"><span>Product mockup</span></div>
-      </div>`;
-  }
-
-  return `
-    <div class="rqm-linkbox">
-      <p class="rqm-linkbox__t">This proof was sent to you as a link</p>
-      <p class="rqm-linkbox__b">It cannot be shown inside this page.<br>
-      Open it in a new tab to check the design, then come back and confirm.</p>
-      <a class="rq-btn rq-btn--solid" href="${esc(rq.proofLink)}" target="_blank" rel="noopener">Open proof in new tab</a>
-    </div>`;
-}
-
-function openProofModal(index, requestId) {
-  const ps = state.productStates[index];
-  const rq = (ps?.reorderRequests || []).find(r => r.id === requestId);
-  if (!rq) return;
-
-  const el = ensureProofModal();
-  el.querySelector('#rqm-title').textContent = rq.requestName || 'Previous design';
-  el.querySelector('#rqm-meta').textContent  = rqMetaLine(rq);
-
-  const body = el.querySelector('#rqm-body');
-  body.innerHTML = proofBodyHtml(rq);
-
-  // Если прокси не смог отрендерить файл — подменяем на текст со ссылкой
-  body.querySelectorAll('img[data-rqm-src]').forEach(img => {
-    img.addEventListener('error', () => {
-      const src = img.dataset.rqmSrc;
-      const wrap = img.closest('.rqm-page');
-      if (wrap) {
-        wrap.innerHTML = `<p class="rqm-fallback">Preview is not available for this file format.<br>
-          <a href="${esc(src)}" target="_blank" rel="noopener">Open the file in a new tab</a></p>`;
-      }
+  box.querySelectorAll('.rq-card').forEach(card => {
+    card.addEventListener('click', () => {
+      box.querySelectorAll('.rq-card').forEach(c => c.classList.remove('is-selected'));
+      card.classList.add('is-selected');
+      const input = card.querySelector('input');
+      if (input) input.checked = true;
+      ps.reorderSelectedId = card.dataset.id;
+      clearFieldError(index, 'reorder');
+      updateSubmitEnabled(index);
     });
+    // клик по ссылке не должен выбирать карточку
+    card.querySelectorAll('a').forEach(a =>
+      a.addEventListener('click', e => e.stopPropagation()));
   });
-
-  const openBtn = el.querySelector('#rqm-open');
-  if (rq.proofLink) {
-    openBtn.href = rq.proofLink;
-    openBtn.removeAttribute('hidden');
-  } else {
-    openBtn.setAttribute('hidden', '');
-  }
-
-  const confirm = el.querySelector('#rqm-confirm');
-  confirm.onclick = () => {
-    ps.reorderSelectedId = rq.id;
-    clearFieldError(index, 'reorder');
-    closeProofModal();
-    renderReorderPicker(index);
-    updateSubmitEnabled(index);
-  };
-
-  el.removeAttribute('hidden');
-  document.body.style.overflow = 'hidden';
-  body.scrollTop = 0;
 }
 
-// ─── Нормализация ответа вебхука ─────────────────────────────────────────────
-// Принимаем два вида: готовый контракт (id/requestName/...) либо сырые поля
-// Airtable из агрегатора Make.
+// Ответ вебхука принимаем в двух видах: либо готовый контракт
+// (id/requestName/proofUrl...), либо сырые поля Airtable из агрегатора Make.
 function normaliseRequest(rq) {
   if (!rq || typeof rq !== 'object') return null;
 
-  const attachments = allAttachments(rq['Unsigned Proof'] ?? rq.unsignedProof ?? rq.attachments);
-  const mockup      = firstAttachment(rq['Product mockup: High-res'] ?? rq.mockup);
+  const attachment = firstAttachment(rq['Unsigned Proof'] ?? rq.unsignedProof);
+  const fileName = Array.isArray(rq['Unsigned Proof'])
+    ? (rq['Unsigned Proof'][0]?.filename || '')
+    : '';
+
   const sentAsLinkRaw = rq.sentAsLink ?? rq['Proof Sent As Link'];
 
   return {
-    id:          firstString(rq.id ?? rq.recordID ?? rq.recordId ?? rq.record_id),
-    requestName: firstString(rq.requestName ?? rq['Request Name']),
-    orderNumber: firstString(rq.orderNumber ?? rq['Order']),
-    productName: firstString(rq.productName ?? rq['Product Name']
-                   ?? rq['Products_new (from Sales Order Line Items)']),
-    variant:     firstString(rq.variant ?? rq['Variant']),
-    date:        firstString(rq.date ?? rq['Order Date'] ?? rq['Work Approval Date'] ?? rq['Created']),
-    status:      firstString(rq.status ?? rq['Status']),
-    proofRecId:  firstString(rq.proofRecId ?? rq['Digital proof recID']),
-    sentAsLink:  sentAsLinkRaw === true || sentAsLinkRaw === 'checked' || sentAsLinkRaw === 1,
-    proofLink:   firstString(rq.proofLink ?? rq.proofUrl ?? rq.approval_link),
-    attachments,
-    mockupUrl:   mockup?.url || '',
+    id:            firstString(rq.id ?? rq.recordID ?? rq.recordId),
+    requestName:   firstString(rq.requestName ?? rq['Request Name']),
+    orderNumber:   firstString(rq.orderNumber ?? rq['Order']),
+    productName:   firstString(rq.productName ?? rq['Product Name']),
+    date:          firstString(rq.date ?? rq['Order Date']),
+    proofFileName: fileName || firstString(rq.proofFileName),
+    sentAsLink:    sentAsLinkRaw === true || sentAsLinkRaw === 'checked',
+    proofUrl:      firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link']),
+    proofFileUrl:  firstString(rq.proofFileUrl) || attachment?.url   || '',
+    proofThumbUrl: firstString(rq.proofThumbUrl) || attachment?.thumb || '',
   };
 }
 
@@ -816,19 +573,10 @@ async function loadReorderRequests(index) {
                : Array.isArray(data.requests) ? data.requests
                : [];
 
-    // приводим к единому виду и отбрасываем записи без id и без чего-либо,
-    // что вообще можно показать клиенту
+    // приводим к единому виду и отбрасываем записи без пруфа и без id
     ps.reorderRequests = list
       .map(normaliseRequest)
-      .filter(rq => rq && rq.id && (rq.attachments.length || rq.proofLink || rq.mockupUrl))
-      // свежие заказы сверху; записи без даты уходят в конец
-      .sort((a, b) => {
-        const ta = Date.parse(a.date) || 0;
-        const tb = Date.parse(b.date) || 0;
-        return tb - ta;
-      });
-
-    console.log('[reorder] usable requests:', ps.reorderRequests.length, ps.reorderRequests);
+      .filter(rq => rq && rq.id && (rq.proofUrl || rq.proofFileUrl || rq.proofThumbUrl));
 
   } catch (err) {
     console.error('[reorder] lookup failed:', err);
@@ -1400,16 +1148,8 @@ function initProductCard(card, index) {
       toggleBtns[0].click();
     }
 
-    ['files', 'embellishment', 'placement'].forEach(field => {
-      const fieldGroup = card.querySelector(`#field-${field}-${index}`);
-      if (!fieldGroup) return;
-      const badge = fieldGroup.querySelector('.badge');
-      if (!badge) return;
-      badge.textContent = isReorder ? 'Optional' : 'Mandatory';
-      badge.classList.toggle('badge--optional', isReorder);
-      badge.classList.toggle('badge--required', !isReorder);
-      clearFieldError(index, field);
-    });
+    setArtworkFieldsRequired(index, !isReorder);
+    ['files', 'embellishment', 'placement'].forEach(f => clearFieldError(index, f));
 
     // При re-order артворк берётся из прошлого пруфа: файлы, цвет нанесения
     // и placement скрываем, вместо них — выбор прошлого Design Request.
@@ -1421,7 +1161,6 @@ function initProductCard(card, index) {
     } else {
       state.productStates[index].reorderSelectedId = null;
       clearFieldError(index, 'reorder');
-      clearFieldError(index, 'rights');
       renderReorderPicker(index);
     }
 
@@ -1455,18 +1194,26 @@ function initProductCard(card, index) {
   card.querySelector(`#submit-product-${index}`).addEventListener('click', () => submitProduct(index));
 }
 
-// При re-order прячем все клиентские поля кроме Additional Notes
-// и показываем контейнер выбора прошлого дизайна.
-function setReorderFieldsHidden(index, isReorder) {
-  const fields = REORDER.HIDDEN_FIELDS.slice();
-  if (REORDER.HIDE_RIGHTS) fields.push('rights');
+// Переключает бейджи Mandatory/Optional у полей артворка
+function setArtworkFieldsRequired(index, required) {
+  ['files', 'embellishment', 'placement'].forEach(field => {
+    const group = document.getElementById(`field-${field}-${index}`);
+    if (!group) return;
+    const badge = group.querySelector('.badge');
+    if (!badge) return;
+    badge.textContent = required ? 'Mandatory' : 'Optional';
+    badge.classList.toggle('badge--required', required);
+    badge.classList.toggle('badge--optional', !required);
+  });
+}
 
-  fields.forEach(field => {
+// При re-order прячем поля загрузки артворка и показываем контейнер выбора
+function setReorderFieldsHidden(index, isReorder) {
+  ['files', 'colors', 'placement'].forEach(field => {
     const el = document.getElementById(`field-${field}-${index}`);
     if (!el) return;
     if (isReorder) el.setAttribute('hidden', '');
     else           el.removeAttribute('hidden');
-    clearFieldError(index, field);
   });
 
   const picker = document.getElementById(`reorder-picker-${index}`);
@@ -1474,13 +1221,6 @@ function setReorderFieldsHidden(index, isReorder) {
     if (isReorder) picker.removeAttribute('hidden');
     else           picker.setAttribute('hidden', '');
   }
-}
-
-// Нужно ли подтверждение прав в текущем режиме карточки
-function rightsRequired(index) {
-  const ps = state.productStates[index];
-  if (!ps) return true;
-  return !(ps.isReorder && REORDER.HIDE_RIGHTS);
 }
 
 // Submit доступен только если подтверждены права на артворк
@@ -1491,16 +1231,14 @@ function updateSubmitEnabled(index) {
   if (!ps || !btn) return;
   if (ps.skipped) { btn.disabled = false; return; }
 
-  // при re-order нужен выбранный прошлый дизайн
+  // при re-order ещё нужен выбранный прошлый дизайн (если он вообще нашёлся)
   const needsPick = ps.isReorder
     && (ps.reorderLoading
-        || !Array.isArray(ps.reorderRequests)
-        || !ps.reorderSelectedId
-        || (REORDER.REQUIRE_SELECTION && ps.reorderRequests.length === 0));
+        || (Array.isArray(ps.reorderRequests)
+            && ps.reorderRequests.length > 0
+            && !ps.reorderSelectedId));
 
-  const rightsOk = rightsRequired(index) ? ps.rightsConfirmed : true;
-
-  btn.disabled = !rightsOk || needsPick;
+  btn.disabled = !ps.rightsConfirmed || needsPick;
 }
 
 // ─── EXPAND / COLLAPSE ────────────────────────────────────────────────────────
@@ -1636,7 +1374,12 @@ function validateProduct(index) {
 
   const placement = (document.getElementById(`input-placement-${index}`)?.value || '').trim();
 
-  if (!ps.isReorder) {
+  // Если по продукту не нашлось ни одного пруфа, re-order невозможен —
+  // требуем артворк как при обычной заявке
+  const noProofs = Array.isArray(ps.reorderRequests) && ps.reorderRequests.length === 0;
+  const reorderActive = ps.isReorder && !noProofs;
+
+  if (!reorderActive) {
     if (ps.files.length === 0) {
       showFieldError(index, 'files', 'Please upload at least one artwork file.');
       valid = false;
@@ -1664,22 +1407,12 @@ function validateProduct(index) {
     }
   }
 
-  if (ps.isReorder) {
-    if (!Array.isArray(ps.reorderRequests) || ps.reorderRequests.length === 0) {
-      if (REORDER.REQUIRE_SELECTION) {
-        showFieldError(index, 'reorder',
-          'No previous design was found for this product. Please untick “This is a re-order” and upload your artwork.');
-        valid = false;
-      }
-    } else if (!ps.reorderSelectedId) {
-      showFieldError(index, 'reorder', 'Please select which previous design to reuse.');
-      valid = false;
-    }
-
-    if (rightsRequired(index) && !ps.rightsConfirmed) {
-      showFieldError(index, 'rights', 'Please confirm you have the rights to use this artwork.');
-      valid = false;
-    }
+  if (ps.isReorder
+      && Array.isArray(ps.reorderRequests)
+      && ps.reorderRequests.length > 0
+      && !ps.reorderSelectedId) {
+    showFieldError(index, 'reorder', 'Please select which previous design to reuse.');
+    valid = false;
   }
 
   const notes = (document.getElementById(`input-notes-${index}`)?.value || '').trim();
@@ -1876,24 +1609,7 @@ async function submitProduct(index) {
       }
 
       const selectedRequest = (ps.reorderRequests || [])
-        .find(rq => rq.id === ps.reorderSelectedId) || null;
-
-      // Всё, что нужно записать в Artwork Submission по выбранному дизайну
-      const reorderPayload = selectedRequest ? {
-        requestId:     selectedRequest.id,
-        requestName:   selectedRequest.requestName,
-        orderNumber:   selectedRequest.orderNumber,
-        productName:   selectedRequest.productName,
-        variant:       selectedRequest.variant,
-        date:          selectedRequest.date,
-        proofRecId:    selectedRequest.proofRecId,
-        sentAsLink:    selectedRequest.sentAsLink,
-        proofLink:     selectedRequest.proofLink || '',
-        proofFileUrl:  selectedRequest.attachments[0]?.url  || '',
-        proofFileName: selectedRequest.attachments[0]?.name || '',
-        proofFileUrls: selectedRequest.attachments.map(a => a.url),
-        mockupUrl:     selectedRequest.mockupUrl || '',
-      } : null;
+        .find(rq => rq.id === ps.reorderSelectedId);
 
       const colors          = document.getElementById(`input-colors-${index}`)?.value.trim() || '';
       const placement       = ps.placement || '';
@@ -1910,15 +1626,9 @@ async function submitProduct(index) {
         isReorder: ps.isReorder,
         colors, placement, embellishment, additionalNotes,
         dropboxUrl,
-        reorder: reorderPayload,
-        // плоские поля — для существующего маппинга в Make
-        reorderRequestId:     reorderPayload?.requestId     || '',
-        reorderRequestName:   reorderPayload?.requestName   || '',
-        reorderOrderNumber:   reorderPayload?.orderNumber   || '',
-        reorderProofUrl:      reorderPayload?.proofLink     || reorderPayload?.proofFileUrl || '',
-        reorderProofFileUrl:  reorderPayload?.proofFileUrl  || '',
-        reorderProofFileName: reorderPayload?.proofFileName || '',
-        reorderProofRecId:    reorderPayload?.proofRecId    || '',
+        reorderRequestId:   ps.reorderSelectedId || '',
+        reorderRequestName: selectedRequest?.requestName || '',
+        reorderProofUrl:    selectedRequest?.proofUrl || selectedRequest?.proofFileUrl || '',
       };
     }
 
@@ -1981,6 +1691,7 @@ async function testDropboxToken() {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('[OPENHOUSE] script.js version:', OH_VERSION);
   if (TEST_MODE) console.warn('[OPENHOUSE] TEST MODE — Dropbox folder:', CONFIG.DROPBOX_UPLOAD_FOLDER);
   injectReorderStyles();
   loadOrder();
