@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-06 reorder-cards, no filenames, empty-state fallback';
+const OH_VERSION = '2026-09-06b reorder-cards, hides embellishment type';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -1209,7 +1209,7 @@ function setArtworkFieldsRequired(index, required) {
 
 // При re-order прячем поля загрузки артворка и показываем контейнер выбора
 function setReorderFieldsHidden(index, isReorder) {
-  ['files', 'colors', 'placement'].forEach(field => {
+  ['files', 'colors', 'placement', 'embellishment'].forEach(field => {
     const el = document.getElementById(`field-${field}-${index}`);
     if (!el) return;
     if (isReorder) el.setAttribute('hidden', '');
