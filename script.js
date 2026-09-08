@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-08 reorder-cards, empty-state message fix';
+const OH_VERSION = '2026-09-08b reorder-cards + proof modal';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -409,7 +409,35 @@ function injectReorderStyles() {
                      margin-bottom: 3px; }
     .rq-card__meta { display: block; font-size: 11px; color: #8A8578; line-height: 1.4; }
     .rq-card__link { display: inline-block; margin-top: 6px; font-size: 11px;
-                     text-decoration: underline; color: #1A1A1A; }
+                     text-decoration: underline; color: #1A1A1A;
+                     background: none; border: 0; padding: 0; cursor: pointer;
+                     font-family: inherit; }
+
+    .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
+           align-items: center; justify-content: center; padding: 24px; }
+    .ohm[hidden] { display: none; }
+    .ohm__backdrop { position: absolute; inset: 0; background: rgba(26,26,26,.55); }
+    .ohm__dialog { position: relative; display: flex; flex-direction: column;
+                   width: min(880px, 100%); max-height: min(88vh, 900px);
+                   background: #FCFBF7; border: 1px solid #DDD8CC; border-radius: 6px;
+                   box-shadow: 0 18px 48px rgba(0,0,0,.22); overflow: hidden; }
+    .ohm__head { display: flex; align-items: flex-start; gap: 12px;
+                 padding: 14px 16px; border-bottom: 1px solid #E6E1D6; }
+    .ohm__title { font-size: 14px; font-weight: 600; margin: 0 0 2px; line-height: 1.3; }
+    .ohm__meta { font-size: 11px; color: #8A8578; margin: 0; line-height: 1.4; }
+    .ohm__close { margin-left: auto; background: none; border: 0; cursor: pointer;
+                  font-size: 22px; line-height: 1; color: #8A8578; padding: 0 4px; }
+    .ohm__close:hover { color: #1A1A1A; }
+    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 16px; background: #F2EFE7; }
+    .ohm__body img { display: block; max-width: 100%; margin: 0 auto;
+                     background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px; }
+    .ohm__frame { width: 100%; height: 62vh; border: 1px solid #E6E1D6;
+                  border-radius: 4px; background: #FFF; }
+    .ohm__foot { display: flex; align-items: center; gap: 12px;
+                 padding: 12px 16px; border-top: 1px solid #E6E1D6; }
+    .ohm__note { font-size: 11px; color: #8A8578; margin: 0; }
+    .ohm__open { margin-left: auto; font-size: 12px; text-decoration: underline;
+                 color: #1A1A1A; white-space: nowrap; }
   `;
   document.head.appendChild(st);
 }
@@ -430,6 +458,96 @@ function proofThumbHtml(rq) {
   return `<div class="rq-card__thumb"><span>PROOF LINK</span></div>`;
 }
 
+// ─── МОДАЛКА ПРОСМОТРА ПРУФА ─────────────────────────────────────────────────
+let _ohModal = null;
+
+function ensureProofModal() {
+  if (_ohModal) return _ohModal;
+
+  const el = document.createElement('div');
+  el.className = 'ohm';
+  el.id = 'oh-proof-modal';
+  el.setAttribute('hidden', '');
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `
+    <div class="ohm__backdrop" data-ohm-close="1"></div>
+    <div class="ohm__dialog">
+      <div class="ohm__head">
+        <div>
+          <p class="ohm__title" id="ohm-title"></p>
+          <p class="ohm__meta"  id="ohm-meta"></p>
+        </div>
+        <button type="button" class="ohm__close" data-ohm-close="1" aria-label="Close">&times;</button>
+      </div>
+      <div class="ohm__body" id="ohm-body"></div>
+      <div class="ohm__foot">
+        <p class="ohm__note" id="ohm-note"></p>
+        <a class="ohm__open" id="ohm-open" target="_blank" rel="noopener">Open in a new tab</a>
+      </div>
+    </div>`;
+
+  el.addEventListener('click', e => {
+    if (e.target.closest('[data-ohm-close]')) closeProofModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !el.hasAttribute('hidden')) closeProofModal();
+  });
+
+  document.body.appendChild(el);
+  _ohModal = el;
+  return el;
+}
+
+function closeProofModal() {
+  const el = document.getElementById('oh-proof-modal');
+  if (!el) return;
+  el.setAttribute('hidden', '');
+  // выгружаем содержимое, чтобы не грузить фрейм в фоне
+  const body = document.getElementById('ohm-body');
+  if (body) body.innerHTML = '';
+  document.body.style.overflow = '';
+}
+
+function openProofModal(rq) {
+  ensureProofModal();
+
+  const meta = [
+    rq.orderNumber ? 'Order #' + rq.orderNumber : '',
+    rq.productName || '',
+    formatDate(rq.date) || '',
+  ].filter(Boolean).join(' · ');
+
+  document.getElementById('ohm-title').textContent = rq.requestName || 'Previous design';
+  document.getElementById('ohm-meta').textContent  = meta;
+
+  const openUrl = rq.proofFileUrl || rq.proofUrl || '';
+  const openLink = document.getElementById('ohm-open');
+  openLink.href = openUrl;
+  openLink.hidden = !openUrl;
+
+  const body = document.getElementById('ohm-body');
+  const note = document.getElementById('ohm-note');
+
+  if (rq.proofFileUrl || rq.proofThumbUrl) {
+    // Вложение: PDF/AI/EPS прогоняем через прокси, растр показываем напрямую
+    const src = rq.proofFileUrl && /\.(pdf|ai|eps|tiff?)(\?|$)/i.test(rq.proofFileUrl)
+      ? CONFIG.IMAGE_PROXY + encodeURIComponent(rq.proofFileUrl) + '&w=1400&output=jpg'
+      : (rq.proofFileUrl || rq.proofThumbUrl);
+
+    body.innerHTML = `<img src="${esc(src)}" alt="${esc(rq.requestName || 'Proof')}">`;
+    note.textContent = 'Preview of the approved proof.';
+  } else {
+    // Пруф был отправлен ссылкой — показываем страницу во фрейме
+    body.innerHTML = `<iframe class="ohm__frame" src="${esc(rq.proofUrl)}"
+      title="Proof preview" referrerpolicy="no-referrer"></iframe>`;
+    note.textContent = 'If the preview stays blank, open the proof in a new tab.';
+  }
+
+  document.getElementById('oh-proof-modal').removeAttribute('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
 function buildRequestCard(rq, index) {
   const meta = [
     rq.orderNumber ? 'Order #' + rq.orderNumber : '',
@@ -438,9 +556,9 @@ function buildRequestCard(rq, index) {
   ].filter(Boolean).join(' · ');
 
 
-  const linkUrl = rq.proofUrl || rq.proofFileUrl || '';
-  const linkHtml = linkUrl
-    ? `<a href="${esc(linkUrl)}" target="_blank" rel="noopener" class="rq-card__link">View proof</a>`
+  const hasPreview = rq.proofFileUrl || rq.proofThumbUrl || rq.proofUrl;
+  const linkHtml = hasPreview
+    ? `<button type="button" class="rq-card__link" data-rq-view="${esc(rq.id)}">View proof</button>`
     : '';
 
   return `
@@ -497,9 +615,14 @@ function renderReorderPicker(index) {
       clearFieldError(index, 'reorder');
       updateSubmitEnabled(index);
     });
-    // клик по ссылке не должен выбирать карточку
-    card.querySelectorAll('a').forEach(a =>
-      a.addEventListener('click', e => e.stopPropagation()));
+    // клик по "View proof" открывает модалку и не выбирает карточку
+    card.querySelectorAll('[data-rq-view]').forEach(btn =>
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rq = (ps.reorderRequests || []).find(x => x.id === btn.dataset.rqView);
+        if (rq) openProofModal(rq);
+      }));
   });
 }
 
