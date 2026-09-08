@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-06b reorder-cards, hides embellishment type';
+const OH_VERSION = '2026-09-08 reorder-cards, empty-state message fix';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -470,8 +470,9 @@ function renderReorderPicker(index) {
     box.innerHTML = `<p class="reorder-picker__empty">We couldn't find any previously approved proofs for this product.<br>Please fill out the form below or contact us.</p>`;
     // Пруфов нет — возвращаем поля загрузки артворка и делаем их снова обязательными,
     // иначе клиент оказывается в тупике: выбрать нечего и загрузить некуда.
-    setReorderFieldsHidden(index, false);
+    setArtworkFieldsHidden(index, false);
     setArtworkFieldsRequired(index, true);
+    box.removeAttribute('hidden');   // контейнер с сообщением должен остаться виден
     return;
   }
 
@@ -1208,13 +1209,17 @@ function setArtworkFieldsRequired(index, required) {
 }
 
 // При re-order прячем поля загрузки артворка и показываем контейнер выбора
-function setReorderFieldsHidden(index, isReorder) {
+function setArtworkFieldsHidden(index, hidden) {
   ['files', 'colors', 'placement', 'embellishment'].forEach(field => {
     const el = document.getElementById(`field-${field}-${index}`);
     if (!el) return;
-    if (isReorder) el.setAttribute('hidden', '');
-    else           el.removeAttribute('hidden');
+    if (hidden) el.setAttribute('hidden', '');
+    else        el.removeAttribute('hidden');
   });
+}
+
+function setReorderFieldsHidden(index, isReorder) {
+  setArtworkFieldsHidden(index, isReorder);
 
   const picker = document.getElementById(`reorder-picker-${index}`);
   if (picker) {
