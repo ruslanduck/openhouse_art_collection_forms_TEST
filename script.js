@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-08e large proof modal, full-res via proxy';
+const OH_VERSION = '2026-09-08f link proofs embedded via artwork domain';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -429,11 +429,14 @@ function injectReorderStyles() {
                   font-size: 22px; line-height: 1; color: #8A8578; padding: 0 4px; }
     .ohm__close:hover { color: #1A1A1A; }
     .ohm__body { flex: 1 1 auto; overflow: auto; padding: 12px; background: #F2EFE7;
-                 display: flex; align-items: flex-start; justify-content: center; }
+                 display: flex; align-items: stretch; justify-content: center; }
     .ohm__body img { display: block; width: 100%; max-width: 1500px; height: auto;
+                     align-self: flex-start;
                      background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px;
                      image-rendering: auto; }
     .ohm__loading { font-size: 12px; color: #8A8578; padding: 40px; }
+    .ohm__frame { width: 100%; height: 100%; min-height: 70vh; border: 0;
+                  border-radius: 4px; background: #FFF; }
     .ohm__linkbox { text-align: center; padding: 44px 20px; }
     .ohm__linkbox-t { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
     .ohm__linkbox-b { font-size: 12px; color: #8A8578; line-height: 1.5;
@@ -564,17 +567,18 @@ function openProofModal(rq) {
         img.src = fallback;
       }, { once: false });
     }
+  } else if (rq.proofUrl) {
+    // Пруф отправлен ссылкой — показываем страницу прямо в модалке
+    body.innerHTML = `<iframe class="ohm__frame" src="${esc(rq.proofUrl)}"
+      title="Proof preview"></iframe>`;
+    note.textContent = 'Approved proof page. If it stays blank, open it in a new tab.';
   } else {
-    // Ни вложения, ни мокапа — только ссылка. Встроить её нельзя:
-    // страница аппрува закрыта заголовком X-Frame-Options.
     body.innerHTML = `
       <div class="ohm__linkbox">
-        <p class="ohm__linkbox-t">This proof was sent as a link</p>
-        <p class="ohm__linkbox-b">There's no image preview for this one.
-          Open it to see the approved artwork.</p>
-        <a class="ohm__btn" href="${esc(rq.proofUrl)}" target="_blank" rel="noopener">Open proof</a>
+        <p class="ohm__linkbox-t">No preview available</p>
+        <p class="ohm__linkbox-b">This design request has no proof file or link attached.</p>
       </div>`;
-    note.textContent = 'Opens the approval page in a new tab.';
+    note.textContent = '';
   }
 
   document.getElementById('oh-proof-modal').removeAttribute('hidden');
@@ -668,6 +672,17 @@ function httpsUrl(u) {
   return s.startsWith('http://') ? 'https://' + s.slice(7) : s;
 }
 
+// approval.byopenhouse.com закрыт для встраивания (X-Frame-Options: DENY,
+// frame-ancestors 'none'), а artwork.byopenhouse.com — та же страница
+// без ограничений. id в ссылках одинаковый, поэтому переписываем домен,
+// чтобы пруф открывался внутри модалки, а не в отдельной вкладке.
+function embeddableProofUrl(u) {
+  const url = httpsUrl(u);
+  if (!url) return '';
+  const id = (url.match(/[?&]id=(rec\w+)/) || [])[1];
+  return id ? 'https://artwork.byopenhouse.com/approval/?id=' + id : url;
+}
+
 function normaliseRequest(rq) {
   if (!rq || typeof rq !== 'object') return null;
 
@@ -694,7 +709,7 @@ function normaliseRequest(rq) {
     date:          firstString(rq.date ?? rq['Order Date']),
     proofFileName: fileName || firstString(rq.proofFileName),
     sentAsLink:    sentAsLinkRaw === true || sentAsLinkRaw === 'checked',
-    proofUrl:      httpsUrl(firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link'])),
+    proofUrl:      embeddableProofUrl(firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link'])),
     proofFileUrl:  firstString(rq.proofFileUrl) || attachment?.url   || '',
     proofThumbUrl: firstString(rq.proofThumbUrl) || attachment?.thumb || '',
     proofFullUrl:  firstString(rq.proofFullUrl)  || fullUrl           || '',
