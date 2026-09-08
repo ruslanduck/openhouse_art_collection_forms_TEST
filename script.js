@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-08d proof modal + https upgrade for approval links';
+const OH_VERSION = '2026-09-08e large proof modal, full-res via proxy';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -414,11 +414,11 @@ function injectReorderStyles() {
                      font-family: inherit; }
 
     .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
-           align-items: center; justify-content: center; padding: 24px; }
+           align-items: center; justify-content: center; padding: 16px; }
     .ohm[hidden] { display: none; }
     .ohm__backdrop { position: absolute; inset: 0; background: rgba(26,26,26,.55); }
     .ohm__dialog { position: relative; display: flex; flex-direction: column;
-                   width: min(880px, 100%); max-height: min(88vh, 900px);
+                   width: min(1600px, 98vw); height: 96vh;
                    background: #FCFBF7; border: 1px solid #DDD8CC; border-radius: 6px;
                    box-shadow: 0 18px 48px rgba(0,0,0,.22); overflow: hidden; }
     .ohm__head { display: flex; align-items: flex-start; gap: 12px;
@@ -428,9 +428,12 @@ function injectReorderStyles() {
     .ohm__close { margin-left: auto; background: none; border: 0; cursor: pointer;
                   font-size: 22px; line-height: 1; color: #8A8578; padding: 0 4px; }
     .ohm__close:hover { color: #1A1A1A; }
-    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 16px; background: #F2EFE7; }
-    .ohm__body img { display: block; max-width: 100%; margin: 0 auto;
-                     background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px; }
+    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 12px; background: #F2EFE7;
+                 display: flex; align-items: flex-start; justify-content: center; }
+    .ohm__body img { display: block; width: 100%; max-width: 1500px; height: auto;
+                     background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px;
+                     image-rendering: auto; }
+    .ohm__loading { font-size: 12px; color: #8A8578; padding: 40px; }
     .ohm__linkbox { text-align: center; padding: 44px 20px; }
     .ohm__linkbox-t { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
     .ohm__linkbox-b { font-size: 12px; color: #8A8578; line-height: 1.5;
@@ -524,7 +527,7 @@ function openProofModal(rq) {
   document.getElementById('ohm-title').textContent = rq.requestName || 'Previous design';
   document.getElementById('ohm-meta').textContent  = meta;
 
-  const openUrl = rq.proofUrl || rq.proofFileUrl || '';
+  const openUrl = rq.proofFileUrl || rq.proofUrl || '';
   const openLink = document.getElementById('ohm-open');
   openLink.href = openUrl;
   openLink.hidden = !openUrl;
@@ -532,15 +535,35 @@ function openProofModal(rq) {
   const body = document.getElementById('ohm-body');
   const note = document.getElementById('ohm-note');
 
-  // Airtable-превью вложения — уже картинка (даже для PDF), прокси не нужен.
-  // Если вложения нет, показываем мокап заявки.
-  const imgSrc = rq.proofFullUrl || rq.proofThumbUrl || rq.mockupUrl || rq.mockupThumb || '';
+  // Качество превью по убыванию:
+  // 1) оригинал файла через прокси — самый крупный вариант (Airtable отдаёт
+  //    для PDF только thumbnails до 512px, оригинал даёт полное разрешение)
+  // 2) thumbnails.full / large от Airtable
+  // 3) мокап заявки
+  const isDoc = /pdf|postscript|illustrator|tiff/i.test(rq.proofFileType || '');
+  const proxied = rq.proofFileUrl
+    ? CONFIG.IMAGE_PROXY + encodeURIComponent(rq.proofFileUrl) + '&w=2000&output=jpg'
+    : '';
 
-  if (imgSrc) {
-    body.innerHTML = `<img src="${esc(imgSrc)}" alt="${esc(rq.requestName || 'Proof')}">`;
-    note.textContent = rq.proofFullUrl || rq.proofThumbUrl
+  const primary  = (isDoc && proxied) || rq.proofFullUrl || rq.proofThumbUrl
+                   || rq.mockupFull || rq.mockupUrl || '';
+  const fallback = rq.proofFullUrl || rq.proofThumbUrl || rq.mockupFull || rq.mockupUrl || '';
+
+  if (primary) {
+    body.innerHTML = `<img id="ohm-img" src="${esc(primary)}" alt="${esc(rq.requestName || 'Proof')}">`;
+    note.textContent = (rq.proofFullUrl || rq.proofFileUrl)
       ? 'Preview of the approved proof.'
       : 'Product mockup from this design request.';
+
+    // если прокси не отдал картинку — молча падаем на превью Airtable
+    const img = document.getElementById('ohm-img');
+    if (img && fallback && fallback !== primary) {
+      img.addEventListener('error', () => {
+        if (img.dataset.fellBack) return;
+        img.dataset.fellBack = '1';
+        img.src = fallback;
+      }, { once: false });
+    }
   } else {
     // Ни вложения, ни мокапа — только ссылка. Встроить её нельзя:
     // страница аппрува закрыта заголовком X-Frame-Options.
@@ -654,6 +677,9 @@ function normaliseRequest(rq) {
   // Airtable рендерит превью и для PDF — берём самое крупное из доступных
   const att = Array.isArray(rq['Unsigned Proof']) ? rq['Unsigned Proof'][0] : null;
   const fullUrl = att?.thumbnails?.full?.url || att?.thumbnails?.large?.url || '';
+
+  const mk = Array.isArray(rq['Product mockup: High-res']) ? rq['Product mockup: High-res'][0] : null;
+  const mockupFull = mk?.thumbnails?.full?.url || mk?.thumbnails?.large?.url || mk?.url || '';
   const fileName = Array.isArray(rq['Unsigned Proof'])
     ? (rq['Unsigned Proof'][0]?.filename || '')
     : '';
@@ -674,6 +700,8 @@ function normaliseRequest(rq) {
     proofFullUrl:  firstString(rq.proofFullUrl)  || fullUrl           || '',
     mockupUrl:     mockup?.url   || '',
     mockupThumb:   mockup?.thumb || '',
+    mockupFull:    mockupFull,
+    proofFileType: firstString(att?.type),
   };
 }
 
