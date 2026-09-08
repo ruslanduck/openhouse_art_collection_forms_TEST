@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-08c proof modal: airtable previews + mockup fallback';
+const OH_VERSION = '2026-09-08d proof modal + https upgrade for approval links';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -638,6 +638,13 @@ function renderReorderPicker(index) {
 
 // Ответ вебхука принимаем в двух видах: либо готовый контракт
 // (id/requestName/proofUrl...), либо сырые поля Airtable из агрегатора Make.
+// Часть approval_link в Airtable сохранена как http:// — на HTTPS-странице
+// такие ссылки помечаются небезопасными, поднимаем схему.
+function httpsUrl(u) {
+  const s = String(u || '').trim();
+  return s.startsWith('http://') ? 'https://' + s.slice(7) : s;
+}
+
 function normaliseRequest(rq) {
   if (!rq || typeof rq !== 'object') return null;
 
@@ -661,7 +668,7 @@ function normaliseRequest(rq) {
     date:          firstString(rq.date ?? rq['Order Date']),
     proofFileName: fileName || firstString(rq.proofFileName),
     sentAsLink:    sentAsLinkRaw === true || sentAsLinkRaw === 'checked',
-    proofUrl:      firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link']),
+    proofUrl:      httpsUrl(firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link'])),
     proofFileUrl:  firstString(rq.proofFileUrl) || attachment?.url   || '',
     proofThumbUrl: firstString(rq.proofThumbUrl) || attachment?.thumb || '',
     proofFullUrl:  firstString(rq.proofFullUrl)  || fullUrl           || '',
