@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-08b reorder-cards + proof modal';
+const OH_VERSION = '2026-09-08c proof modal: airtable previews + mockup fallback';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -431,8 +431,15 @@ function injectReorderStyles() {
     .ohm__body { flex: 1 1 auto; overflow: auto; padding: 16px; background: #F2EFE7; }
     .ohm__body img { display: block; max-width: 100%; margin: 0 auto;
                      background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px; }
-    .ohm__frame { width: 100%; height: 62vh; border: 1px solid #E6E1D6;
-                  border-radius: 4px; background: #FFF; }
+    .ohm__linkbox { text-align: center; padding: 44px 20px; }
+    .ohm__linkbox-t { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+    .ohm__linkbox-b { font-size: 12px; color: #8A8578; line-height: 1.5;
+                      margin: 0 auto 18px; max-width: 340px; }
+    .ohm__btn { display: inline-block; padding: 10px 20px; font-size: 12px;
+                letter-spacing: .04em; text-transform: uppercase;
+                background: #1A1A1A; color: #FCFBF7; border-radius: 3px;
+                text-decoration: none; }
+    .ohm__btn:hover { background: #333; }
     .ohm__foot { display: flex; align-items: center; gap: 12px;
                  padding: 12px 16px; border-top: 1px solid #E6E1D6; }
     .ohm__note { font-size: 11px; color: #8A8578; margin: 0; }
@@ -444,17 +451,13 @@ function injectReorderStyles() {
 
 // Превью пруфа: вложение рендерим напрямую, PDF/.ai — через прокси.
 // Если пруф был отправлен ссылкой, картинки нет — показываем плейсхолдер и кнопку.
+// Превью для карточки. Airtable-превью вложения — уже картинка, даже если
+// сам файл PDF, поэтому прокси тут не нужен. Если превью нет — мокап заявки.
 function proofThumbHtml(rq) {
-  const fileUrl = rq.proofThumbUrl || rq.proofFileUrl || '';
-
-  if (fileUrl) {
-    const needsProxy = /\.(pdf|ai|eps)(\?|$)/i.test(fileUrl);
-    const src = needsProxy
-      ? CONFIG.IMAGE_PROXY + encodeURIComponent(fileUrl) + '&w=400&output=jpg'
-      : fileUrl;
+  const src = rq.proofThumbUrl || rq.mockupThumb || rq.mockupUrl || '';
+  if (src) {
     return `<div class="rq-card__thumb"><img src="${esc(src)}" alt="" loading="lazy"></div>`;
   }
-
   return `<div class="rq-card__thumb"><span>PROOF LINK</span></div>`;
 }
 
@@ -521,7 +524,7 @@ function openProofModal(rq) {
   document.getElementById('ohm-title').textContent = rq.requestName || 'Previous design';
   document.getElementById('ohm-meta').textContent  = meta;
 
-  const openUrl = rq.proofFileUrl || rq.proofUrl || '';
+  const openUrl = rq.proofUrl || rq.proofFileUrl || '';
   const openLink = document.getElementById('ohm-open');
   openLink.href = openUrl;
   openLink.hidden = !openUrl;
@@ -529,19 +532,26 @@ function openProofModal(rq) {
   const body = document.getElementById('ohm-body');
   const note = document.getElementById('ohm-note');
 
-  if (rq.proofFileUrl || rq.proofThumbUrl) {
-    // Вложение: PDF/AI/EPS прогоняем через прокси, растр показываем напрямую
-    const src = rq.proofFileUrl && /\.(pdf|ai|eps|tiff?)(\?|$)/i.test(rq.proofFileUrl)
-      ? CONFIG.IMAGE_PROXY + encodeURIComponent(rq.proofFileUrl) + '&w=1400&output=jpg'
-      : (rq.proofFileUrl || rq.proofThumbUrl);
+  // Airtable-превью вложения — уже картинка (даже для PDF), прокси не нужен.
+  // Если вложения нет, показываем мокап заявки.
+  const imgSrc = rq.proofFullUrl || rq.proofThumbUrl || rq.mockupUrl || rq.mockupThumb || '';
 
-    body.innerHTML = `<img src="${esc(src)}" alt="${esc(rq.requestName || 'Proof')}">`;
-    note.textContent = 'Preview of the approved proof.';
+  if (imgSrc) {
+    body.innerHTML = `<img src="${esc(imgSrc)}" alt="${esc(rq.requestName || 'Proof')}">`;
+    note.textContent = rq.proofFullUrl || rq.proofThumbUrl
+      ? 'Preview of the approved proof.'
+      : 'Product mockup from this design request.';
   } else {
-    // Пруф был отправлен ссылкой — показываем страницу во фрейме
-    body.innerHTML = `<iframe class="ohm__frame" src="${esc(rq.proofUrl)}"
-      title="Proof preview" referrerpolicy="no-referrer"></iframe>`;
-    note.textContent = 'If the preview stays blank, open the proof in a new tab.';
+    // Ни вложения, ни мокапа — только ссылка. Встроить её нельзя:
+    // страница аппрува закрыта заголовком X-Frame-Options.
+    body.innerHTML = `
+      <div class="ohm__linkbox">
+        <p class="ohm__linkbox-t">This proof was sent as a link</p>
+        <p class="ohm__linkbox-b">There's no image preview for this one.
+          Open it to see the approved artwork.</p>
+        <a class="ohm__btn" href="${esc(rq.proofUrl)}" target="_blank" rel="noopener">Open proof</a>
+      </div>`;
+    note.textContent = 'Opens the approval page in a new tab.';
   }
 
   document.getElementById('oh-proof-modal').removeAttribute('hidden');
@@ -556,7 +566,7 @@ function buildRequestCard(rq, index) {
   ].filter(Boolean).join(' · ');
 
 
-  const hasPreview = rq.proofFileUrl || rq.proofThumbUrl || rq.proofUrl;
+  const hasPreview = rq.proofFullUrl || rq.proofThumbUrl || rq.mockupUrl || rq.proofUrl;
   const linkHtml = hasPreview
     ? `<button type="button" class="rq-card__link" data-rq-view="${esc(rq.id)}">View proof</button>`
     : '';
@@ -632,6 +642,11 @@ function normaliseRequest(rq) {
   if (!rq || typeof rq !== 'object') return null;
 
   const attachment = firstAttachment(rq['Unsigned Proof'] ?? rq.unsignedProof);
+  const mockup     = firstAttachment(rq['Product mockup: High-res'] ?? rq.mockup);
+
+  // Airtable рендерит превью и для PDF — берём самое крупное из доступных
+  const att = Array.isArray(rq['Unsigned Proof']) ? rq['Unsigned Proof'][0] : null;
+  const fullUrl = att?.thumbnails?.full?.url || att?.thumbnails?.large?.url || '';
   const fileName = Array.isArray(rq['Unsigned Proof'])
     ? (rq['Unsigned Proof'][0]?.filename || '')
     : '';
@@ -649,6 +664,9 @@ function normaliseRequest(rq) {
     proofUrl:      firstString(rq.proofUrl ?? rq.approval_link ?? rq['approval_link']),
     proofFileUrl:  firstString(rq.proofFileUrl) || attachment?.url   || '',
     proofThumbUrl: firstString(rq.proofThumbUrl) || attachment?.thumb || '',
+    proofFullUrl:  firstString(rq.proofFullUrl)  || fullUrl           || '',
+    mockupUrl:     mockup?.url   || '',
+    mockupThumb:   mockup?.thumb || '',
   };
 }
 
