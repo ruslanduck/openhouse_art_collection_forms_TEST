@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-27 multi-location artwork upload';
+const OH_VERSION = '2026-09-27b multi-location, framed blocks';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -424,10 +424,21 @@ function injectReorderStyles() {
     .loc-btn:disabled { color: #C9C3B4; cursor: default; }
     .loc-btn:not(:disabled):hover { background: #F2EFE7; }
     .loc-count { min-width: 22px; text-align: center; font-size: 13px; font-weight: 600; }
-    .loc-item { border-top: 1px solid #E6E1D6; padding-top: 16px; margin-top: 16px; }
-    .loc-item--single { border-top: 0; padding-top: 0; margin-top: 8px; }
-    .loc-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
-                 color: #A8432B; margin: 0 0 10px; font-weight: 600; }
+    /* Каждая локация — отдельная карточка со своей рамкой и подложкой,
+       чтобы блоки не сливались в одну ленту полей */
+    .loc-item { border: 1px solid #DDD8CC; border-radius: 6px; background: #FCFBF7;
+                padding: 16px 18px 6px; margin-top: 12px; }
+    .loc-item--single { border: 0; background: none; padding: 0; margin-top: 8px; }
+
+    .loc-item__head { display: flex; align-items: center; gap: 8px;
+                      margin: -2px 0 14px; padding-bottom: 10px;
+                      border-bottom: 1px solid #EDE9DF; }
+    .loc-num { display: inline-flex; align-items: center; justify-content: center;
+               width: 20px; height: 20px; border-radius: 50%;
+               background: #1A1A1A; color: #FCFBF7;
+               font-size: 11px; font-weight: 600; line-height: 1; }
+    .loc-title { font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+                 color: #1A1A1A; font-weight: 600; }
 
     .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
            align-items: center; justify-content: center; padding: 0; }
@@ -1295,7 +1306,10 @@ function locationHtml(index, loc) {
   const n = loc + 1;
   return `
     <div class="loc-item" id="loc-item-${index}-${loc}">
-      <p class="loc-title">Location ${n}</p>
+      <div class="loc-item__head">
+        <span class="loc-num">${n}</span>
+        <span class="loc-title">Location ${n}</span>
+      </div>
 
       <div class="field-group" id="field-files-${loc}-${index}">
         <div class="field-label-row">
@@ -1380,7 +1394,7 @@ function renderLocations(index) {
 
   // заголовок "Location 1" не нужен, когда локация одна
   const single = ps.locations.length === 1;
-  list.querySelectorAll('.loc-title').forEach(t => { t.hidden = single; });
+  list.querySelectorAll('.loc-item__head').forEach(t => { t.hidden = single; });
   list.querySelectorAll('.loc-item').forEach(el => el.classList.toggle('loc-item--single', single));
 }
 
