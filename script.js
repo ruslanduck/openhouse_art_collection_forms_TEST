@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-08f link proofs embedded via artwork domain';
+const OH_VERSION = '2026-09-27 multi-location artwork upload';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -88,6 +88,7 @@ function createProductState() {
     skipped:         false,
     isReorder:       false,
     rightsConfirmed: false,
+    locations:       [{ files: [], fileIdCounter: 0 }],   // минимум одна локация
     reorderRequests:  null,   // null = ещё не запрашивали, [] = ничего не найдено
     reorderLoading:   false,
     reorderSelectedId: null,
@@ -413,14 +414,29 @@ function injectReorderStyles() {
                      background: none; border: 0; padding: 0; cursor: pointer;
                      font-family: inherit; }
 
+    .locations { margin-bottom: 4px; }
+    .loc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .loc-hint { margin-top: 0 !important; }
+    .loc-counter { margin-left: auto; display: flex; align-items: center; gap: 2px;
+                   border: 1px solid #DDD8CC; border-radius: 4px; background: #FCFBF7; }
+    .loc-btn { width: 28px; height: 26px; border: 0; background: none; cursor: pointer;
+               font-size: 16px; line-height: 1; color: #1A1A1A; font-family: inherit; }
+    .loc-btn:disabled { color: #C9C3B4; cursor: default; }
+    .loc-btn:not(:disabled):hover { background: #F2EFE7; }
+    .loc-count { min-width: 22px; text-align: center; font-size: 13px; font-weight: 600; }
+    .loc-item { border-top: 1px solid #E6E1D6; padding-top: 16px; margin-top: 16px; }
+    .loc-item--single { border-top: 0; padding-top: 0; margin-top: 8px; }
+    .loc-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+                 color: #A8432B; margin: 0 0 10px; font-weight: 600; }
+
     .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
-           align-items: center; justify-content: center; padding: 16px; }
+           align-items: center; justify-content: center; padding: 0; }
     .ohm[hidden] { display: none; }
     .ohm__backdrop { position: absolute; inset: 0; background: rgba(26,26,26,.55); }
     .ohm__dialog { position: relative; display: flex; flex-direction: column;
-                   width: min(1600px, 98vw); height: 96vh;
-                   background: #FCFBF7; border: 1px solid #DDD8CC; border-radius: 6px;
-                   box-shadow: 0 18px 48px rgba(0,0,0,.22); overflow: hidden; }
+                   width: 100vw; height: 100vh;
+                   background: #FCFBF7; border: 0; border-radius: 0;
+                   overflow: hidden; }
     .ohm__head { display: flex; align-items: flex-start; gap: 12px;
                  padding: 14px 16px; border-bottom: 1px solid #E6E1D6; }
     .ohm__title { font-size: 14px; font-weight: 600; margin: 0 0 2px; line-height: 1.3; }
@@ -428,12 +444,11 @@ function injectReorderStyles() {
     .ohm__close { margin-left: auto; background: none; border: 0; cursor: pointer;
                   font-size: 22px; line-height: 1; color: #8A8578; padding: 0 4px; }
     .ohm__close:hover { color: #1A1A1A; }
-    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 12px; background: #F2EFE7;
+    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 0; background: #F2EFE7;
                  display: flex; align-items: stretch; justify-content: center; }
-    .ohm__body img { display: block; width: 100%; max-width: 1500px; height: auto;
-                     align-self: flex-start;
-                     background: #FFF; border: 1px solid #E6E1D6; border-radius: 4px;
-                     image-rendering: auto; }
+    /* Пруф во всю ширину экрана: масштаб ограничен только окном браузера */
+    .ohm__body img { display: block; width: 100%; max-width: none; height: auto;
+                     align-self: flex-start; background: #FFF; cursor: zoom-in; }
     .ohm__loading { font-size: 12px; color: #8A8578; padding: 40px; }
     .ohm__frame { width: 100%; height: 100%; min-height: 70vh; border: 0;
                   border-radius: 4px; background: #FFF; }
@@ -545,7 +560,7 @@ function openProofModal(rq) {
   // 3) мокап заявки
   const isDoc = /pdf|postscript|illustrator|tiff/i.test(rq.proofFileType || '');
   const proxied = rq.proofFileUrl
-    ? CONFIG.IMAGE_PROXY + encodeURIComponent(rq.proofFileUrl) + '&w=2000&output=jpg'
+    ? CONFIG.IMAGE_PROXY + encodeURIComponent(rq.proofFileUrl) + '&w=2600&output=jpg'
     : '';
 
   const primary  = (isDoc && proxied) || rq.proofFullUrl || rq.proofThumbUrl
@@ -560,6 +575,9 @@ function openProofModal(rq) {
 
     // если прокси не отдал картинку — молча падаем на превью Airtable
     const img = document.getElementById('ohm-img');
+    if (img && openUrl) {
+      img.addEventListener('click', () => window.open(openUrl, '_blank', 'noopener'));
+    }
     if (img && fallback && fallback !== primary) {
       img.addEventListener('error', () => {
         if (img.dataset.fellBack) return;
@@ -1176,29 +1194,17 @@ function buildProductCard(group, index) {
 
         <div id="client-fields-${index}">
 
-        <div class="field-group" id="field-files-${index}">
-          <div class="field-label-row">
-            <span class="field-label">Artwork File(s)</span>
-            <span class="badge badge--required">Mandatory</span>
+        <div class="locations" id="locations-${index}">
+          <div class="loc-head">
+            <span class="field-label">Logo Locations</span>
+            <div class="loc-counter">
+              <button type="button" class="loc-btn" id="loc-minus-${index}" aria-label="Remove location">&minus;</button>
+              <span class="loc-count" id="loc-count-${index}">1</span>
+              <button type="button" class="loc-btn" id="loc-plus-${index}" aria-label="Add location">+</button>
+            </div>
           </div>
-          <div class="dropzone" id="dropzone-${index}" role="button" tabindex="0"
-               aria-label="Upload artwork files — drag and drop or click to browse">
-            <input type="file" id="file-input-${index}" multiple
-                   accept=".ai,.eps,.png,.pdf"
-                   aria-hidden="true" tabindex="-1">
-            <svg class="dropzone__icon" aria-hidden="true" width="22" height="22"
-                 viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            <p class="dropzone__main">Drag &amp; drop files or browse</p>
-            <p class="dropzone__types">AI &nbsp;·&nbsp; EPS &nbsp;·&nbsp; PNG &nbsp;·&nbsp; PDF &nbsp;·&nbsp; Max 100 MB each</p>
-          </div>
-          <ul class="file-list" id="file-list-${index}" aria-live="polite"></ul>
-          <p class="field-hint">Vector files (AI, EPS) are preferred for best print quality.</p>
-          <p class="field-error" id="error-files-${index}" role="alert" hidden></p>
+          <p class="field-hint loc-hint">Add a location for each place the artwork should be applied. Additional locations may affect pricing.</p>
+          <div id="loc-list-${index}"></div>
         </div>
 
         ${hasEmbellishment ? `<div class="field-group" id="field-embellishment-${index}">
@@ -1235,7 +1241,7 @@ function buildProductCard(group, index) {
           <p class="field-error" id="error-placement-${index}" role="alert" hidden></p>
         </div>
 
-        <div class="field-group" id="field-notes-${index}">
+        <div class="field-group" id="field-notes-${index}" hidden>
           <div class="field-label-row">
             <label class="field-label" for="input-notes-${index}">Additional Notes</label>
             <span class="badge badge--optional">Optional</span>
@@ -1282,6 +1288,140 @@ function buildProductCard(group, index) {
   return card;
 }
 
+// ─── ЛОКАЦИИ НАНЕСЕНИЯ ───────────────────────────────────────────────────────
+const MAX_LOCATIONS = 6;
+
+function locationHtml(index, loc) {
+  const n = loc + 1;
+  return `
+    <div class="loc-item" id="loc-item-${index}-${loc}">
+      <p class="loc-title">Location ${n}</p>
+
+      <div class="field-group" id="field-files-${loc}-${index}">
+        <div class="field-label-row">
+          <span class="field-label">Artwork File(s)</span>
+          <span class="badge badge--required">Mandatory</span>
+        </div>
+        <div class="dropzone" id="dropzone-${index}-${loc}" role="button" tabindex="0"
+             aria-label="Upload artwork files for location ${n}">
+          <input type="file" id="file-input-${index}-${loc}" multiple
+                 accept=".ai,.eps,.png,.pdf,.csv,.svg"
+                 aria-hidden="true" tabindex="-1">
+          <svg class="dropzone__icon" aria-hidden="true" width="22" height="22"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p class="dropzone__main">Drag &amp; drop files or browse</p>
+          <p class="dropzone__types">AI &nbsp;·&nbsp; EPS &nbsp;·&nbsp; PNG &nbsp;·&nbsp; PDF &nbsp;·&nbsp; CSV &nbsp;·&nbsp; SVG &nbsp;·&nbsp; Max 100 MB each</p>
+        </div>
+        <ul class="file-list" id="file-list-${index}-${loc}" aria-live="polite"></ul>
+        <p class="field-hint">Vector files (AI, EPS) are preferred for best print quality.</p>
+        <p class="field-error" id="error-files-${loc}-${index}" role="alert" hidden></p>
+      </div>
+
+      <div class="field-group" id="field-placement-${loc}-${index}">
+        <div class="field-label-row">
+          <label class="field-label" for="input-placement-${index}-${loc}">Placement Directions</label>
+          <span class="badge badge--required">Mandatory</span>
+        </div>
+        <textarea id="input-placement-${index}-${loc}" rows="3"
+                  placeholder="Describe where you'd like the artwork placed on the product…"></textarea>
+        <p class="field-hint">Examples: Centered, Maximum Size, Left Chest, Front Center 2" from top.</p>
+        <p class="field-error" id="error-placement-${loc}-${index}" role="alert" hidden></p>
+      </div>
+
+      <div class="field-group" id="field-locnotes-${loc}-${index}">
+        <div class="field-label-row">
+          <label class="field-label" for="input-locnotes-${index}-${loc}">Notes for this location</label>
+          <span class="badge badge--optional">Optional</span>
+        </div>
+        <textarea id="input-locnotes-${index}-${loc}" rows="2" maxlength="300"
+                  placeholder="Any details specific to this location…"></textarea>
+        <p class="field-error" id="error-locnotes-${loc}-${index}" role="alert" hidden></p>
+      </div>
+    </div>`;
+}
+
+function renderLocations(index) {
+  const ps   = state.productStates[index];
+  const list = document.getElementById(`loc-list-${index}`);
+  const card = getCard(index);
+  if (!ps || !list || !card) return;
+
+  // сохраняем введённый текст перед перерисовкой
+  ps.locations.forEach((l, i) => {
+    const p = document.getElementById(`input-placement-${index}-${i}`);
+    const n = document.getElementById(`input-locnotes-${index}-${i}`);
+    if (p) l.placement = p.value;
+    if (n) l.notes     = n.value;
+  });
+
+  list.innerHTML = ps.locations.map((_, i) => locationHtml(index, i)).join('');
+
+  ps.locations.forEach((l, i) => {
+    const p = document.getElementById(`input-placement-${index}-${i}`);
+    const n = document.getElementById(`input-locnotes-${index}-${i}`);
+    if (p && l.placement) p.value = l.placement;
+    if (n && l.notes)     n.value = l.notes;
+    initLocation(card, index, i);
+    renderFileList(index, i);
+  });
+
+  const countEl = document.getElementById(`loc-count-${index}`);
+  if (countEl) countEl.textContent = String(ps.locations.length);
+
+  const minus = document.getElementById(`loc-minus-${index}`);
+  const plus  = document.getElementById(`loc-plus-${index}`);
+  if (minus) minus.disabled = ps.locations.length <= 1;
+  if (plus)  plus.disabled  = ps.locations.length >= MAX_LOCATIONS;
+
+  // заголовок "Location 1" не нужен, когда локация одна
+  const single = ps.locations.length === 1;
+  list.querySelectorAll('.loc-title').forEach(t => { t.hidden = single; });
+  list.querySelectorAll('.loc-item').forEach(el => el.classList.toggle('loc-item--single', single));
+}
+
+function addLocation(index) {
+  const ps = state.productStates[index];
+  if (ps.locations.length >= MAX_LOCATIONS) return;
+  ps.locations.push({ files: [], fileIdCounter: 0 });
+  renderLocations(index);
+}
+
+function removeLocation(index) {
+  const ps = state.productStates[index];
+  if (ps.locations.length <= 1) return;
+  ps.locations.pop();
+  renderLocations(index);
+}
+
+function initLocation(card, index, loc) {
+  const dropzone  = card.querySelector(`#dropzone-${index}-${loc}`);
+  const fileInput = card.querySelector(`#file-input-${index}-${loc}`);
+  const fileList  = card.querySelector(`#file-list-${index}-${loc}`);
+  if (!dropzone || !fileInput || !fileList) return;
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener('change', e => { addFiles(index, loc, e.target.files); fileInput.value = ''; });
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('dragover'); }));
+  ['dragleave', 'drop'].forEach(evt =>
+    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
+  dropzone.addEventListener('drop', e => addFiles(index, loc, e.dataTransfer.files));
+
+  fileList.addEventListener('click', e => {
+    const btn = e.target.closest('.file-remove-btn');
+    if (btn) removeFile(index, loc, Number(btn.dataset.id));
+  });
+}
+
 // ─── INIT PRODUCT CARD ────────────────────────────────────────────────────────
 function initProductCard(card, index) {
   const header = card.querySelector('.product-card__header');
@@ -1292,28 +1432,10 @@ function initProductCard(card, index) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleProduct(index); }
   });
 
-  // Dropzone
-  const dropzone  = card.querySelector(`#dropzone-${index}`);
-  const fileInput = card.querySelector(`#file-input-${index}`);
-  const fileList  = card.querySelector(`#file-list-${index}`);
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
-  });
-  fileInput.addEventListener('change', e => { addFiles(index, e.target.files); fileInput.value = ''; });
-  ['dragenter', 'dragover'].forEach(evt =>
-    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('dragover'); })
-  );
-  ['dragleave', 'drop'].forEach(evt =>
-    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('dragover'); })
-  );
-  dropzone.addEventListener('drop', e => addFiles(index, e.dataTransfer.files));
-
-  fileList.addEventListener('click', e => {
-    const btn = e.target.closest('.file-remove-btn');
-    if (btn) removeFile(index, Number(btn.dataset.id));
-  });
+  // Локации нанесения: рендер и кнопки +/-
+  renderLocations(index);
+  card.querySelector(`#loc-plus-${index}`)?.addEventListener('click', () => addLocation(index));
+  card.querySelector(`#loc-minus-${index}`)?.addEventListener('click', () => removeLocation(index));
 
   // Toggle buttons (embellishment)
   const toggleBtns = [...card.querySelectorAll('.toggle-btn')];
@@ -1341,7 +1463,9 @@ function initProductCard(card, index) {
     }
 
     setArtworkFieldsRequired(index, !isReorder);
-    ['files', 'embellishment', 'placement'].forEach(f => clearFieldError(index, f));
+    clearFieldError(index, 'embellishment');
+    (state.productStates[index].locations || []).forEach((_, i) =>
+      ['files', 'placement'].forEach(f => clearFieldError(index, `${f}-${i}`)));
 
     // При re-order артворк берётся из прошлого пруфа: файлы, цвет нанесения
     // и placement скрываем, вместо них — выбор прошлого Design Request.
@@ -1388,7 +1512,12 @@ function initProductCard(card, index) {
 
 // Переключает бейджи Mandatory/Optional у полей артворка
 function setArtworkFieldsRequired(index, required) {
-  ['files', 'embellishment', 'placement'].forEach(field => {
+  const ids = ['embellishment'];
+  (state.productStates[index]?.locations || []).forEach((_, i) => {
+    ids.push(`files-${i}`, `placement-${i}`);
+  });
+
+  ids.forEach(field => {
     const group = document.getElementById(`field-${field}-${index}`);
     if (!group) return;
     const badge = group.querySelector('.badge');
@@ -1401,12 +1530,26 @@ function setArtworkFieldsRequired(index, required) {
 
 // При re-order прячем поля загрузки артворка и показываем контейнер выбора
 function setArtworkFieldsHidden(index, hidden) {
-  ['files', 'colors', 'placement', 'embellishment'].forEach(field => {
+  ['colors', 'embellishment'].forEach(field => {
     const el = document.getElementById(`field-${field}-${index}`);
     if (!el) return;
     if (hidden) el.setAttribute('hidden', '');
     else        el.removeAttribute('hidden');
   });
+
+  // Блок локаций целиком
+  const locs = document.getElementById(`locations-${index}`);
+  if (locs) {
+    if (hidden) locs.setAttribute('hidden', '');
+    else        locs.removeAttribute('hidden');
+  }
+
+  // При re-order локаций нет, поэтому показываем общее поле заметок
+  const notes = document.getElementById(`field-notes-${index}`);
+  if (notes) {
+    if (hidden) notes.removeAttribute('hidden');
+    else        notes.setAttribute('hidden', '');
+  }
 }
 
 function setReorderFieldsHidden(index, isReorder) {
@@ -1505,38 +1648,42 @@ function updateProductsCounter() {
 }
 
 // ─── FILE HANDLING ────────────────────────────────────────────────────────────
-function addFiles(index, fileList) {
-  const ps = state.productStates[index];
+function addFiles(index, loc, fileList) {
+  const slot = state.productStates[index].locations[loc];
+  if (!slot) return;
   let hasError = false;
 
   Array.from(fileList).forEach(file => {
     const ext = file.name.split('.').pop().toLowerCase();
     if (!CONFIG.ALLOWED_EXTENSIONS.includes(ext)) {
-      showFieldError(index, 'files', `"${file.name}" — only AI, EPS, PNG, PDF allowed.`);
+      showFieldError(index, `files-${loc}`, `"${file.name}" — only AI, EPS, PNG, PDF, CSV, SVG allowed.`);
       hasError = true;
       return;
     }
     if (file.size > CONFIG.MAX_FILE_SIZE_MB * 1048576) {
-      showFieldError(index, 'files', `"${file.name}" exceeds the 100 MB limit.`);
+      showFieldError(index, `files-${loc}`, `"${file.name}" exceeds the 100 MB limit.`);
       hasError = true;
       return;
     }
-    ps.files.push({ file, id: ++ps.fileIdCounter });
+    slot.files.push({ file, id: ++slot.fileIdCounter });
   });
 
-  renderFileList(index);
-  if (!hasError) clearFieldError(index, 'files');
+  renderFileList(index, loc);
+  if (!hasError) clearFieldError(index, `files-${loc}`);
 }
 
-function removeFile(index, id) {
-  state.productStates[index].files = state.productStates[index].files.filter(f => f.id !== id);
-  renderFileList(index);
+function removeFile(index, loc, id) {
+  const slot = state.productStates[index].locations[loc];
+  if (!slot) return;
+  slot.files = slot.files.filter(f => f.id !== id);
+  renderFileList(index, loc);
 }
 
-function renderFileList(index) {
-  const ul = document.getElementById('file-list-' + index);
+function renderFileList(index, loc) {
+  const ul = document.getElementById(`file-list-${index}-${loc}`);
+  if (!ul) return;
   ul.innerHTML = '';
-  state.productStates[index].files.forEach(({ file, id }) => {
+  (state.productStates[index].locations[loc]?.files || []).forEach(({ file, id }) => {
     const li = document.createElement('li');
     li.innerHTML =
       `<span class="file-list__name" title="${esc(file.name)}">${esc(file.name)}</span>` +
@@ -1565,10 +1712,15 @@ function validateProduct(index) {
   const ps = state.productStates[index];
   let valid = true;
 
-  ['files', 'colors', 'placement', 'embellishment', 'rights', 'reorder']
-    .forEach(f => clearFieldError(index, f));
+  ['colors', 'embellishment', 'rights', 'reorder'].forEach(f => clearFieldError(index, f));
+  ps.locations.forEach((_, i) =>
+    ['files', 'placement', 'locnotes'].forEach(f => clearFieldError(index, `${f}-${i}`)));
 
-  const placement = (document.getElementById(`input-placement-${index}`)?.value || '').trim();
+  // Считываем поля всех локаций в состояние
+  ps.locations.forEach((l, i) => {
+    l.placement = (document.getElementById(`input-placement-${index}-${i}`)?.value || '').trim();
+    l.notes     = (document.getElementById(`input-locnotes-${index}-${i}`)?.value || '').trim();
+  });
 
   // Если по продукту не нашлось ни одного пруфа, re-order невозможен —
   // требуем артворк как при обычной заявке
@@ -1576,18 +1728,19 @@ function validateProduct(index) {
   const reorderActive = ps.isReorder && !noProofs;
 
   if (!reorderActive) {
-    if (ps.files.length === 0) {
-      showFieldError(index, 'files', 'Please upload at least one artwork file.');
-      valid = false;
-    }
-
-    if (!placement) {
-      showFieldError(index, 'placement', 'Placement directions are required.');
-      valid = false;
-    } else if (placement.length < 5) {
-      showFieldError(index, 'placement', 'Please provide more detail (at least 5 characters).');
-      valid = false;
-    }
+    ps.locations.forEach((l, i) => {
+      if (l.files.length === 0) {
+        showFieldError(index, `files-${i}`, 'Please upload at least one artwork file.');
+        valid = false;
+      }
+      if (!l.placement) {
+        showFieldError(index, `placement-${i}`, 'Placement directions are required.');
+        valid = false;
+      } else if (l.placement.length < 5) {
+        showFieldError(index, `placement-${i}`, 'Please provide more detail (at least 5 characters).');
+        valid = false;
+      }
+    });
 
     const hasEmbellishment =
       (state.orderData?.groups[index]?.embellishmentTypes || []).length > 0;
@@ -1613,9 +1766,9 @@ function validateProduct(index) {
 
   const notes = (document.getElementById(`input-notes-${index}`)?.value || '').trim();
 
-  // Store values on state so submitProduct reads the same values
-  ps.placement       = placement;
-  ps.additionalNotes = notes;
+  // Совместимость со старым пейлоадом: первая локация едет и в плоских полях
+  ps.placement       = ps.locations[0]?.placement || '';
+  ps.additionalNotes = notes || ps.locations[0]?.notes || '';
 
   return valid;
 }
@@ -1738,6 +1891,7 @@ function skipProduct(index) {
   card.querySelector(`#reorder-check-${index}`).setAttribute('hidden', '');
   card.querySelector(`#field-rights-${index}`).setAttribute('hidden', '');
   card.querySelector(`#reorder-picker-${index}`).setAttribute('hidden', '');
+  card.querySelector(`#locations-${index}`)?.setAttribute('hidden', '');
   updateSubmitEnabled(index);
 }
 
@@ -1793,16 +1947,41 @@ async function submitProduct(index) {
         variant:     group.variant,
         skipped: true,
         isReorder: ps.isReorder,
+        locationCount: 0,
       };
     } else {
-      let dropboxUrl = '';
       const card  = getCard(index);
       const badge = card?.querySelector('.status-badge');
-      for (let i = 0; i < ps.files.length; i++) {
-        if (badge) badge.textContent = `Uploading ${i + 1} of ${ps.files.length}…`;
-        const item = ps.files[i];
-        dropboxUrl = await uploadFileToDropbox(item.file, orderId, group.folderLabel || group.productName);
+      const baseLabel = group.folderLabel || group.productName;
+      const multi = ps.locations.length > 1;
+
+      // Файлы каждой локации кладём в свою подпапку, чтобы на производстве
+      // было видно, что к какому месту нанесения относится
+      const totalFiles = ps.locations.reduce((a, l) => a + l.files.length, 0);
+      let done = 0;
+      const locationsPayload = [];
+
+      for (let li = 0; li < ps.locations.length; li++) {
+        const l = ps.locations[li];
+        const folder = multi ? `${baseLabel}/Location ${li + 1}` : baseLabel;
+        let locUrl = '';
+
+        for (const item of l.files) {
+          done++;
+          if (badge) badge.textContent = `Uploading ${done} of ${totalFiles}…`;
+          locUrl = await uploadFileToDropbox(item.file, orderId, folder);
+        }
+
+        locationsPayload.push({
+          location:  li + 1,
+          placement: l.placement || '',
+          notes:     l.notes || '',
+          dropboxUrl: locUrl,
+          fileNames: l.files.map(f => f.file.name),
+        });
       }
+
+      const dropboxUrl = locationsPayload[0]?.dropboxUrl || '';
 
       const selectedRequest = (ps.reorderRequests || [])
         .find(rq => rq.id === ps.reorderSelectedId);
@@ -1822,6 +2001,8 @@ async function submitProduct(index) {
         isReorder: ps.isReorder,
         colors, placement, embellishment, additionalNotes,
         dropboxUrl,
+        locationCount: ps.locations.length,
+        locations:     locationsPayload,
         reorderRequestId:   ps.reorderSelectedId || '',
         reorderRequestName: selectedRequest?.requestName || '',
         reorderProofUrl:    selectedRequest?.proofUrl || selectedRequest?.proofFileUrl || '',
