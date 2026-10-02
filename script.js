@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-09-27b multi-location, framed blocks';
+const OH_VERSION = '2026-10-01b multi-location + summary text for Airtable';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -40,7 +40,7 @@ const CONFIG = {
   DROPBOX_APP_SECRET:    'bndcd2tbdztq3yh',
   DROPBOX_REFRESH_TOKEN: '5nl_-90oG0kAAAAAAAAAAYe9LQrN-pHIEo01fbfcgbjd9M6Fds4r3cao2RdT6kLu',
   DROPBOX_UPLOAD_FOLDER: ACTIVE.FOLDER,
-  ALLOWED_EXTENSIONS:    ['ai', 'eps', 'png', 'pdf'],
+  ALLOWED_EXTENSIONS:    ['ai', 'eps', 'png', 'pdf', 'csv', 'svg', 'psd'],
   MAX_FILE_SIZE_MB:      100,
 };
 
@@ -1300,6 +1300,34 @@ function buildProductCard(group, index) {
 }
 
 // ─── ЛОКАЦИИ НАНЕСЕНИЯ ───────────────────────────────────────────────────────
+
+// Текст клиента не экранируем: подчёркивания внутри слова (logo_front.ai)
+// разметку не включают, а обратные слэши испортили бы вид в обычном поле
+function mdText(str) {
+  return String(str || '').trim();
+}
+
+// Сводка по локациям для одной длинной текстовой колонки в Airtable.
+// Формат — markdown: при включённом rich text в поле заголовки станут
+// жирными, а ссылки кликабельными; без rich text текст тоже читается.
+function buildLocationsSummary(locations) {
+  if (!Array.isArray(locations) || locations.length === 0) return '';
+
+  const blocks = locations.map(l => {
+    const lines = [];
+    const where = l.placement ? ` — ${mdText(l.placement)}` : '';
+    lines.push(`**Location ${l.location}**${where}`);
+    if (l.fileNames && l.fileNames.length) lines.push(`Files: ${l.fileNames.map(mdText).join(', ')}`);
+    if (l.dropboxUrl) lines.push(`Dropbox: ${l.dropboxUrl}`);
+    if (l.notes)      lines.push(`Notes: ${mdText(l.notes)}`);
+    return lines.join('\n');
+  });
+
+  const header = locations.length > 1
+    ? `${locations.length} locations\n\n`
+    : '';
+  return header + blocks.join('\n\n');
+}
 const MAX_LOCATIONS = 6;
 
 function locationHtml(index, loc) {
@@ -1319,7 +1347,7 @@ function locationHtml(index, loc) {
         <div class="dropzone" id="dropzone-${index}-${loc}" role="button" tabindex="0"
              aria-label="Upload artwork files for location ${n}">
           <input type="file" id="file-input-${index}-${loc}" multiple
-                 accept=".ai,.eps,.png,.pdf,.csv,.svg"
+                 accept=".ai,.eps,.png,.pdf,.csv,.svg,.psd"
                  aria-hidden="true" tabindex="-1">
           <svg class="dropzone__icon" aria-hidden="true" width="22" height="22"
                viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1329,7 +1357,7 @@ function locationHtml(index, loc) {
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p class="dropzone__main">Drag &amp; drop files or browse</p>
-          <p class="dropzone__types">AI &nbsp;·&nbsp; EPS &nbsp;·&nbsp; PNG &nbsp;·&nbsp; PDF &nbsp;·&nbsp; CSV &nbsp;·&nbsp; SVG &nbsp;·&nbsp; Max 100 MB each</p>
+          <p class="dropzone__types">AI &nbsp;·&nbsp; EPS &nbsp;·&nbsp; PNG &nbsp;·&nbsp; PDF &nbsp;·&nbsp; CSV &nbsp;·&nbsp; SVG &nbsp;·&nbsp; PSD &nbsp;·&nbsp; Max 100 MB each</p>
         </div>
         <ul class="file-list" id="file-list-${index}-${loc}" aria-live="polite"></ul>
         <p class="field-hint">Vector files (AI, EPS) are preferred for best print quality.</p>
@@ -1670,7 +1698,7 @@ function addFiles(index, loc, fileList) {
   Array.from(fileList).forEach(file => {
     const ext = file.name.split('.').pop().toLowerCase();
     if (!CONFIG.ALLOWED_EXTENSIONS.includes(ext)) {
-      showFieldError(index, `files-${loc}`, `"${file.name}" — only AI, EPS, PNG, PDF, CSV, SVG allowed.`);
+      showFieldError(index, `files-${loc}`, `"${file.name}" — only AI, EPS, PNG, PDF, CSV, SVG, PSD allowed.`);
       hasError = true;
       return;
     }
@@ -1962,6 +1990,7 @@ async function submitProduct(index) {
         skipped: true,
         isReorder: ps.isReorder,
         locationCount: 0,
+        locationsSummary: '',
       };
     } else {
       const card  = getCard(index);
@@ -2015,8 +2044,9 @@ async function submitProduct(index) {
         isReorder: ps.isReorder,
         colors, placement, embellishment, additionalNotes,
         dropboxUrl,
-        locationCount: ps.locations.length,
-        locations:     locationsPayload,
+        locationCount:    ps.locations.length,
+        locations:        locationsPayload,
+        locationsSummary: buildLocationsSummary(locationsPayload),
         reorderRequestId:   ps.reorderSelectedId || '',
         reorderRequestName: selectedRequest?.requestName || '',
         reorderProofUrl:    selectedRequest?.proofUrl || selectedRequest?.proofFileUrl || '',
