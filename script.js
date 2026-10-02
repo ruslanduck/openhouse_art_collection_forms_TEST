@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-01b multi-location + summary text for Airtable';
+const OH_VERSION = '2026-10-02 proof popup with visible close';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -441,21 +441,26 @@ function injectReorderStyles() {
                  color: #1A1A1A; font-weight: 600; }
 
     .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
-           align-items: center; justify-content: center; padding: 0; }
+           align-items: center; justify-content: center; padding: 28px; }
     .ohm[hidden] { display: none; }
-    .ohm__backdrop { position: absolute; inset: 0; background: rgba(26,26,26,.55); }
+    .ohm__backdrop { position: absolute; inset: 0; background: rgba(26,26,26,.62);
+                     cursor: pointer; }
     .ohm__dialog { position: relative; display: flex; flex-direction: column;
-                   width: 100vw; height: 100vh;
-                   background: #FCFBF7; border: 0; border-radius: 0;
-                   overflow: hidden; }
+                   width: min(1200px, 92vw); height: min(88vh, 960px);
+                   background: #FCFBF7; border: 1px solid #DDD8CC; border-radius: 8px;
+                   box-shadow: 0 24px 64px rgba(0,0,0,.35); overflow: hidden; }
     .ohm__head { display: flex; align-items: flex-start; gap: 12px;
                  padding: 14px 16px; border-bottom: 1px solid #E6E1D6; }
     .ohm__title { font-size: 14px; font-weight: 600; margin: 0 0 2px; line-height: 1.3; }
     .ohm__meta { font-size: 11px; color: #8A8578; margin: 0; line-height: 1.4; }
-    .ohm__close { margin-left: auto; background: none; border: 0; cursor: pointer;
-                  font-size: 22px; line-height: 1; color: #8A8578; padding: 0 4px; }
-    .ohm__close:hover { color: #1A1A1A; }
-    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 0; background: #F2EFE7;
+    .ohm__close { margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+                  padding: 7px 12px; border: 1px solid #1A1A1A; border-radius: 4px;
+                  background: #FCFBF7; color: #1A1A1A; cursor: pointer;
+                  font-family: inherit; font-size: 11px; font-weight: 600;
+                  letter-spacing: .08em; text-transform: uppercase; line-height: 1; }
+    .ohm__close span { font-size: 16px; line-height: 1; }
+    .ohm__close:hover { background: #1A1A1A; color: #FCFBF7; }
+    .ohm__body { flex: 1 1 auto; overflow: auto; padding: 14px; background: #F2EFE7;
                  display: flex; align-items: stretch; justify-content: center; }
     /* Пруф во всю ширину экрана: масштаб ограничен только окном браузера */
     .ohm__body img { display: block; width: 100%; max-width: none; height: auto;
@@ -513,7 +518,7 @@ function ensureProofModal() {
           <p class="ohm__title" id="ohm-title"></p>
           <p class="ohm__meta"  id="ohm-meta"></p>
         </div>
-        <button type="button" class="ohm__close" data-ohm-close="1" aria-label="Close">&times;</button>
+        <button type="button" class="ohm__close" data-ohm-close="1" aria-label="Close preview"><span aria-hidden="true">&times;</span>Close</button>
       </div>
       <div class="ohm__body" id="ohm-body"></div>
       <div class="ohm__foot">
