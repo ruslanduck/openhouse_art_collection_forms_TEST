@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-03 larger proof popup, single scroll';
+const OH_VERSION = '2026-10-04 locations via Add Location button';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -41,7 +41,7 @@ const CONFIG = {
   DROPBOX_REFRESH_TOKEN: '5nl_-90oG0kAAAAAAAAAAYe9LQrN-pHIEo01fbfcgbjd9M6Fds4r3cao2RdT6kLu',
   DROPBOX_UPLOAD_FOLDER: ACTIVE.FOLDER,
   ALLOWED_EXTENSIONS:    ['ai', 'eps', 'png', 'pdf', 'csv', 'svg', 'psd'],
-  MAX_FILE_SIZE_MB:      100,
+  MAX_FILE_SIZE_MB:      150,
 };
 
 // Поля Airtable, в которых может лежать картинка варианта — проверяются по порядку.
@@ -415,30 +415,32 @@ function injectReorderStyles() {
                      font-family: inherit; }
 
     .locations { margin-bottom: 4px; }
-    .loc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-    .loc-hint { margin-top: 0 !important; }
-    .loc-counter { margin-left: auto; display: flex; align-items: center; gap: 2px;
-                   border: 1px solid #DDD8CC; border-radius: 4px; background: #FCFBF7; }
-    .loc-btn { width: 28px; height: 26px; border: 0; background: none; cursor: pointer;
-               font-size: 16px; line-height: 1; color: #1A1A1A; font-family: inherit; }
-    .loc-btn:disabled { color: #C9C3B4; cursor: default; }
-    .loc-btn:not(:disabled):hover { background: #F2EFE7; }
-    .loc-count { min-width: 22px; text-align: center; font-size: 13px; font-weight: 600; }
-    /* Каждая локация — отдельная карточка со своей рамкой и подложкой,
-       чтобы блоки не сливались в одну ленту полей */
-    .loc-item { border: 1px solid #DDD8CC; border-radius: 6px; background: #FCFBF7;
-                padding: 16px 18px 6px; margin-top: 12px; }
-    .loc-item--single { border: 0; background: none; padding: 0; margin-top: 8px; }
+    .loc-item--first { margin: 0; }
 
+    /* Дополнительная локация — отдельная карточка */
+    .loc-item:not(.loc-item--first) {
+      border: 1px solid #DDD8CC; border-radius: 6px; background: #FCFBF7;
+      padding: 14px 18px 4px; margin-top: 14px; }
+    .loc-hint { margin: 0 0 10px !important; }
     .loc-item__head { display: flex; align-items: center; gap: 8px;
-                      margin: -2px 0 14px; padding-bottom: 10px;
+                      margin: 0 0 14px; padding-bottom: 10px;
                       border-bottom: 1px solid #EDE9DF; }
-    .loc-num { display: inline-flex; align-items: center; justify-content: center;
-               width: 20px; height: 20px; border-radius: 50%;
-               background: #1A1A1A; color: #FCFBF7;
-               font-size: 11px; font-weight: 600; line-height: 1; }
     .loc-title { font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
                  color: #1A1A1A; font-weight: 600; }
+    .loc-remove { margin-left: auto; background: none; border: 0; padding: 0;
+                  cursor: pointer; font-family: inherit; font-size: 11px;
+                  color: #8A8578; text-decoration: underline; }
+    .loc-remove:hover { color: #A8432B; }
+
+    /* Кнопка под последним Placement Directions */
+    .loc-add { display: inline-flex; align-items: center; gap: 6px;
+               margin: 2px 0 18px; padding: 8px 14px;
+               background: #FCFBF7; border: 1px dashed #B5AE9C; border-radius: 4px;
+               cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 600;
+               letter-spacing: .08em; text-transform: uppercase; color: #1A1A1A; }
+    .loc-add span { font-size: 15px; line-height: 1; }
+    .loc-add:hover { border-style: solid; border-color: #1A1A1A; }
+    .loc-add[hidden] { display: none; }
 
     .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
            align-items: center; justify-content: center; padding: 14px; }
@@ -1214,16 +1216,10 @@ function buildProductCard(group, index) {
         <div id="client-fields-${index}">
 
         <div class="locations" id="locations-${index}">
-          <div class="loc-head">
-            <span class="field-label">Logo Locations</span>
-            <div class="loc-counter">
-              <button type="button" class="loc-btn" id="loc-minus-${index}" aria-label="Remove location">&minus;</button>
-              <span class="loc-count" id="loc-count-${index}">1</span>
-              <button type="button" class="loc-btn" id="loc-plus-${index}" aria-label="Add location">+</button>
-            </div>
-          </div>
-          <p class="field-hint loc-hint">Add a location for each place the artwork should be applied. Additional locations may affect pricing.</p>
           <div id="loc-list-${index}"></div>
+          <button type="button" class="loc-add" id="loc-add-${index}">
+            <span aria-hidden="true">+</span> Add Location
+          </button>
         </div>
 
         ${hasEmbellishment ? `<div class="field-group" id="field-embellishment-${index}">
@@ -1260,7 +1256,7 @@ function buildProductCard(group, index) {
           <p class="field-error" id="error-placement-${index}" role="alert" hidden></p>
         </div>
 
-        <div class="field-group" id="field-notes-${index}" hidden>
+        <div class="field-group" id="field-notes-${index}">
           <div class="field-label-row">
             <label class="field-label" for="input-notes-${index}">Additional Notes</label>
             <span class="badge badge--optional">Optional</span>
@@ -1327,7 +1323,6 @@ function buildLocationsSummary(locations) {
     lines.push(`**Location ${l.location}**${where}`);
     if (l.fileNames && l.fileNames.length) lines.push(`Files: ${l.fileNames.map(mdText).join(', ')}`);
     if (l.dropboxUrl) lines.push(`Dropbox: ${l.dropboxUrl}`);
-    if (l.notes)      lines.push(`Notes: ${mdText(l.notes)}`);
     return lines.join('\n');
   });
 
@@ -1340,20 +1335,28 @@ const MAX_LOCATIONS = 6;
 
 function locationHtml(index, loc) {
   const n = loc + 1;
-  return `
-    <div class="loc-item" id="loc-item-${index}-${loc}">
-      <div class="loc-item__head">
-        <span class="loc-num">${n}</span>
-        <span class="loc-title">Location ${n}</span>
-      </div>
+  const extra = loc > 0;
 
+  // Первая локация выглядит как обычная форма: без рамки, заголовка и подсказки.
+  // Дополнительные — в своей рамке, с подсказкой о цене и кнопкой удаления.
+  const head = extra ? `
+      <p class="field-hint loc-hint">Add a location for each place the artwork should be applied. Additional locations may affect pricing.</p>
+      <div class="loc-item__head">
+        <span class="loc-title">Location ${n}</span>
+        <button type="button" class="loc-remove" data-loc-remove="${loc}"
+                aria-label="Remove location ${n}">Remove</button>
+      </div>` : '';
+
+  return `
+    <div class="loc-item${extra ? '' : ' loc-item--first'}" id="loc-item-${index}-${loc}">
+      ${head}
       <div class="field-group" id="field-files-${loc}-${index}">
         <div class="field-label-row">
           <span class="field-label">Artwork File(s)</span>
           <span class="badge badge--required">Mandatory</span>
         </div>
         <div class="dropzone" id="dropzone-${index}-${loc}" role="button" tabindex="0"
-             aria-label="Upload artwork files for location ${n}">
+             aria-label="Upload artwork files${extra ? ' for location ' + n : ''}">
           <input type="file" id="file-input-${index}-${loc}" multiple
                  accept=".ai,.eps,.png,.pdf,.csv,.svg,.psd"
                  aria-hidden="true" tabindex="-1">
@@ -1365,7 +1368,7 @@ function locationHtml(index, loc) {
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p class="dropzone__main">Drag &amp; drop files or browse</p>
-          <p class="dropzone__types">AI &nbsp;·&nbsp; EPS &nbsp;·&nbsp; PNG &nbsp;·&nbsp; PDF &nbsp;·&nbsp; CSV &nbsp;·&nbsp; SVG &nbsp;·&nbsp; PSD &nbsp;·&nbsp; Max 100 MB each</p>
+          <p class="dropzone__types">AI &nbsp;·&nbsp; EPS &nbsp;·&nbsp; PNG &nbsp;·&nbsp; PDF &nbsp;·&nbsp; CSV &nbsp;·&nbsp; SVG &nbsp;·&nbsp; PSD &nbsp;·&nbsp; Max 150 MB each</p>
         </div>
         <ul class="file-list" id="file-list-${index}-${loc}" aria-live="polite"></ul>
         <p class="field-hint">Vector files (AI, EPS) are preferred for best print quality.</p>
@@ -1382,17 +1385,18 @@ function locationHtml(index, loc) {
         <p class="field-hint">Examples: Centered, Maximum Size, Left Chest, Front Center 2" from top.</p>
         <p class="field-error" id="error-placement-${loc}-${index}" role="alert" hidden></p>
       </div>
-
-      <div class="field-group" id="field-locnotes-${loc}-${index}">
-        <div class="field-label-row">
-          <label class="field-label" for="input-locnotes-${index}-${loc}">Notes for this location</label>
-          <span class="badge badge--optional">Optional</span>
-        </div>
-        <textarea id="input-locnotes-${index}-${loc}" rows="2" maxlength="300"
-                  placeholder="Any details specific to this location…"></textarea>
-        <p class="field-error" id="error-locnotes-${loc}-${index}" role="alert" hidden></p>
-      </div>
     </div>`;
+}
+
+// Переносим введённый текст из полей в состояние — до любой перерисовки,
+// иначе при добавлении или удалении локации текст пропадёт или съедет.
+function syncLocations(index) {
+  const ps = state.productStates[index];
+  if (!ps) return;
+  ps.locations.forEach((l, i) => {
+    const p = document.getElementById(`input-placement-${index}-${i}`);
+    if (p) l.placement = p.value;
+  });
 }
 
 function renderLocations(index) {
@@ -1401,50 +1405,35 @@ function renderLocations(index) {
   const card = getCard(index);
   if (!ps || !list || !card) return;
 
-  // сохраняем введённый текст перед перерисовкой
-  ps.locations.forEach((l, i) => {
-    const p = document.getElementById(`input-placement-${index}-${i}`);
-    const n = document.getElementById(`input-locnotes-${index}-${i}`);
-    if (p) l.placement = p.value;
-    if (n) l.notes     = n.value;
-  });
-
   list.innerHTML = ps.locations.map((_, i) => locationHtml(index, i)).join('');
 
   ps.locations.forEach((l, i) => {
     const p = document.getElementById(`input-placement-${index}-${i}`);
-    const n = document.getElementById(`input-locnotes-${index}-${i}`);
     if (p && l.placement) p.value = l.placement;
-    if (n && l.notes)     n.value = l.notes;
     initLocation(card, index, i);
     renderFileList(index, i);
   });
 
-  const countEl = document.getElementById(`loc-count-${index}`);
-  if (countEl) countEl.textContent = String(ps.locations.length);
-
-  const minus = document.getElementById(`loc-minus-${index}`);
-  const plus  = document.getElementById(`loc-plus-${index}`);
-  if (minus) minus.disabled = ps.locations.length <= 1;
-  if (plus)  plus.disabled  = ps.locations.length >= MAX_LOCATIONS;
-
-  // заголовок "Location 1" не нужен, когда локация одна
-  const single = ps.locations.length === 1;
-  list.querySelectorAll('.loc-item__head').forEach(t => { t.hidden = single; });
-  list.querySelectorAll('.loc-item').forEach(el => el.classList.toggle('loc-item--single', single));
+  const addBtn = document.getElementById(`loc-add-${index}`);
+  if (addBtn) addBtn.hidden = ps.locations.length >= MAX_LOCATIONS;
 }
 
 function addLocation(index) {
   const ps = state.productStates[index];
   if (ps.locations.length >= MAX_LOCATIONS) return;
+  syncLocations(index);
   ps.locations.push({ files: [], fileIdCounter: 0 });
   renderLocations(index);
+  // переводим фокус на новую локацию, чтобы клиент сразу её увидел
+  document.getElementById(`loc-item-${index}-${ps.locations.length - 1}`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function removeLocation(index) {
+function removeLocation(index, loc) {
   const ps = state.productStates[index];
-  if (ps.locations.length <= 1) return;
-  ps.locations.pop();
+  if (loc < 1 || loc >= ps.locations.length) return;   // первую удалить нельзя
+  syncLocations(index);
+  ps.locations.splice(loc, 1);
   renderLocations(index);
 }
 
@@ -1484,8 +1473,11 @@ function initProductCard(card, index) {
 
   // Локации нанесения: рендер и кнопки +/-
   renderLocations(index);
-  card.querySelector(`#loc-plus-${index}`)?.addEventListener('click', () => addLocation(index));
-  card.querySelector(`#loc-minus-${index}`)?.addEventListener('click', () => removeLocation(index));
+  card.querySelector(`#loc-add-${index}`)?.addEventListener('click', () => addLocation(index));
+  card.querySelector(`#loc-list-${index}`)?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-loc-remove]');
+    if (btn) removeLocation(index, Number(btn.dataset.locRemove));
+  });
 
   // Toggle buttons (embellishment)
   const toggleBtns = [...card.querySelectorAll('.toggle-btn')];
@@ -1594,12 +1586,6 @@ function setArtworkFieldsHidden(index, hidden) {
     else        locs.removeAttribute('hidden');
   }
 
-  // При re-order локаций нет, поэтому показываем общее поле заметок
-  const notes = document.getElementById(`field-notes-${index}`);
-  if (notes) {
-    if (hidden) notes.removeAttribute('hidden');
-    else        notes.setAttribute('hidden', '');
-  }
 }
 
 function setReorderFieldsHidden(index, isReorder) {
@@ -1711,7 +1697,7 @@ function addFiles(index, loc, fileList) {
       return;
     }
     if (file.size > CONFIG.MAX_FILE_SIZE_MB * 1048576) {
-      showFieldError(index, `files-${loc}`, `"${file.name}" exceeds the 100 MB limit.`);
+      showFieldError(index, `files-${loc}`, `"${file.name}" exceeds the 150 MB limit.`);
       hasError = true;
       return;
     }
@@ -1764,12 +1750,11 @@ function validateProduct(index) {
 
   ['colors', 'embellishment', 'rights', 'reorder'].forEach(f => clearFieldError(index, f));
   ps.locations.forEach((_, i) =>
-    ['files', 'placement', 'locnotes'].forEach(f => clearFieldError(index, `${f}-${i}`)));
+    ['files', 'placement'].forEach(f => clearFieldError(index, `${f}-${i}`)));
 
   // Считываем поля всех локаций в состояние
   ps.locations.forEach((l, i) => {
     l.placement = (document.getElementById(`input-placement-${index}-${i}`)?.value || '').trim();
-    l.notes     = (document.getElementById(`input-locnotes-${index}-${i}`)?.value || '').trim();
   });
 
   // Если по продукту не нашлось ни одного пруфа, re-order невозможен —
@@ -1818,7 +1803,7 @@ function validateProduct(index) {
 
   // Совместимость со старым пейлоадом: первая локация едет и в плоских полях
   ps.placement       = ps.locations[0]?.placement || '';
-  ps.additionalNotes = notes || ps.locations[0]?.notes || '';
+  ps.additionalNotes = notes;
 
   return valid;
 }
@@ -2026,7 +2011,6 @@ async function submitProduct(index) {
         locationsPayload.push({
           location:  li + 1,
           placement: l.placement || '',
-          notes:     l.notes || '',
           dropboxUrl: locUrl,
           fileNames: l.files.map(f => f.file.name),
         });
