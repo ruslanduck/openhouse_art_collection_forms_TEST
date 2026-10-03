@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-02 proof popup with visible close';
+const OH_VERSION = '2026-10-03 larger proof popup, single scroll';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -441,12 +441,12 @@ function injectReorderStyles() {
                  color: #1A1A1A; font-weight: 600; }
 
     .ohm { position: fixed; inset: 0; z-index: 9999; display: flex;
-           align-items: center; justify-content: center; padding: 28px; }
+           align-items: center; justify-content: center; padding: 14px; }
     .ohm[hidden] { display: none; }
     .ohm__backdrop { position: absolute; inset: 0; background: rgba(26,26,26,.62);
                      cursor: pointer; }
     .ohm__dialog { position: relative; display: flex; flex-direction: column;
-                   width: min(1200px, 92vw); height: min(88vh, 960px);
+                   width: min(1680px, 96vw); height: 94vh;
                    background: #FCFBF7; border: 1px solid #DDD8CC; border-radius: 8px;
                    box-shadow: 0 24px 64px rgba(0,0,0,.35); overflow: hidden; }
     .ohm__head { display: flex; align-items: flex-start; gap: 12px;
@@ -466,8 +466,9 @@ function injectReorderStyles() {
     .ohm__body img { display: block; width: 100%; max-width: none; height: auto;
                      align-self: flex-start; background: #FFF; cursor: zoom-in; }
     .ohm__loading { font-size: 12px; color: #8A8578; padding: 40px; }
-    .ohm__frame { width: 100%; height: 100%; min-height: 70vh; border: 0;
-                  border-radius: 4px; background: #FFF; }
+    .ohm__frame { display: block; width: 100%; height: 100%; min-height: 0; border: 0;
+                  background: #FFF; }
+    .ohm__body--frame { padding: 0; overflow: hidden; }
     .ohm__linkbox { text-align: center; padding: 44px 20px; }
     .ohm__linkbox-t { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
     .ohm__linkbox-b { font-size: 12px; color: #8A8578; line-height: 1.5;
@@ -568,6 +569,7 @@ function openProofModal(rq) {
 
   const body = document.getElementById('ohm-body');
   const note = document.getElementById('ohm-note');
+  body.classList.remove('ohm__body--frame');
 
   // Качество превью по убыванию:
   // 1) оригинал файла через прокси — самый крупный вариант (Airtable отдаёт
@@ -603,6 +605,7 @@ function openProofModal(rq) {
     }
   } else if (rq.proofUrl) {
     // Пруф отправлен ссылкой — показываем страницу прямо в модалке
+    body.classList.add('ohm__body--frame');
     body.innerHTML = `<iframe class="ohm__frame" src="${esc(rq.proofUrl)}"
       title="Proof preview"></iframe>`;
     note.textContent = 'Approved proof page. If it stays blank, open it in a new tab.';
