@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-05 reorder cards: mockup or compact, no duplicate product';
+const OH_VERSION = '2026-10-06 reorder: mockup from any mockup lookup';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -732,13 +732,19 @@ function normaliseRequest(rq) {
   if (!rq || typeof rq !== 'object') return null;
 
   const attachment = firstAttachment(rq['Unsigned Proof'] ?? rq.unsignedProof);
-  const mockup     = firstAttachment(rq['Product mockup: High-res'] ?? rq.mockup);
+  // Мокап может прийти из поля самой заявки или из лукапа со строки заказа
+  // (через связь Digital proof) — берём первое поле с "mockup" в имени,
+  // где реально лежит вложение. Так не важно, как назван лукап.
+  const mockupRaw = [rq['Product mockup: High-res'], rq.mockup,
+    ...Object.keys(rq).filter(k => /mockup/i.test(k)).map(k => rq[k])]
+    .find(v => firstAttachment(v));
+  const mockup = firstAttachment(mockupRaw);
 
   // Airtable рендерит превью и для PDF — берём самое крупное из доступных
   const att = Array.isArray(rq['Unsigned Proof']) ? rq['Unsigned Proof'][0] : null;
   const fullUrl = att?.thumbnails?.full?.url || att?.thumbnails?.large?.url || '';
 
-  const mk = Array.isArray(rq['Product mockup: High-res']) ? rq['Product mockup: High-res'][0] : null;
+  const mk = Array.isArray(mockupRaw) ? mockupRaw[0] : null;
   const mockupFull = mk?.thumbnails?.full?.url || mk?.thumbnails?.large?.url || mk?.url || '';
   const fileName = Array.isArray(rq['Unsigned Proof'])
     ? (rq['Unsigned Proof'][0]?.filename || '')
