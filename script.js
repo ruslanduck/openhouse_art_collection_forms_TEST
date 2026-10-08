@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-04 locations via Add Location button';
+const OH_VERSION = '2026-10-05 reorder cards: mockup or compact, no duplicate product';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -409,10 +409,17 @@ function injectReorderStyles() {
     .rq-card__name { display: block; font-size: 13px; font-weight: 600; line-height: 1.3;
                      margin-bottom: 3px; }
     .rq-card__meta { display: block; font-size: 11px; color: #8A8578; line-height: 1.4; }
-    .rq-card__link { display: inline-block; margin-top: 6px; font-size: 11px;
-                     text-decoration: underline; color: #1A1A1A;
-                     background: none; border: 0; padding: 0; cursor: pointer;
-                     font-family: inherit; }
+    .rq-card__link { display: inline-block; margin-top: 10px; padding: 6px 11px;
+                     font-size: 10px; font-weight: 600; letter-spacing: .08em;
+                     text-transform: uppercase; color: #1A1A1A;
+                     background: #FCFBF7; border: 1px solid #1A1A1A; border-radius: 3px;
+                     cursor: pointer; font-family: inherit; }
+    .rq-card__link:hover { background: #1A1A1A; color: #FCFBF7; }
+
+    /* Карточка без превью: только название, заказ и кнопка */
+    .rq-card--compact { display: flex; flex-direction: column; justify-content: center;
+                        min-height: 0; }
+    .rq-card--compact .rq-card__name { font-size: 14px; }
 
     .locations { margin-bottom: 4px; }
     .loc-item--first { margin: 0; }
@@ -494,11 +501,10 @@ function injectReorderStyles() {
 // Превью для карточки. Airtable-превью вложения — уже картинка, даже если
 // сам файл PDF, поэтому прокси тут не нужен. Если превью нет — мокап заявки.
 function proofThumbHtml(rq) {
+  // превью вложения, иначе мокап заявки (лёгкий thumbnail, не полный файл)
   const src = rq.proofThumbUrl || rq.mockupThumb || rq.mockupUrl || '';
-  if (src) {
-    return `<div class="rq-card__thumb"><img src="${esc(src)}" alt="" loading="lazy"></div>`;
-  }
-  return `<div class="rq-card__thumb"><span>PROOF LINK</span></div>`;
+  if (!src) return '';   // нечего показать — карточка без картинки
+  return `<div class="rq-card__thumb"><img src="${esc(src)}" alt="" loading="lazy"></div>`;
 }
 
 // ─── МОДАЛКА ПРОСМОТРА ПРУФА ─────────────────────────────────────────────────
@@ -557,7 +563,6 @@ function openProofModal(rq) {
 
   const meta = [
     rq.orderNumber ? 'Order #' + rq.orderNumber : '',
-    rq.productName || '',
     formatDate(rq.date) || '',
   ].filter(Boolean).join(' · ');
 
@@ -627,7 +632,6 @@ function openProofModal(rq) {
 function buildRequestCard(rq, index) {
   const meta = [
     rq.orderNumber ? 'Order #' + rq.orderNumber : '',
-    rq.productName || '',
     formatDate(rq.date) || '',
   ].filter(Boolean).join(' · ');
 
@@ -637,10 +641,12 @@ function buildRequestCard(rq, index) {
     ? `<button type="button" class="rq-card__link" data-rq-view="${esc(rq.id)}">View proof</button>`
     : '';
 
+  const thumb = proofThumbHtml(rq);
+
   return `
-    <label class="rq-card" data-id="${esc(rq.id)}">
+    <label class="rq-card${thumb ? '' : ' rq-card--compact'}" data-id="${esc(rq.id)}">
       <input type="radio" name="reorder-request-${index}" value="${esc(rq.id)}">
-      ${proofThumbHtml(rq)}
+      ${thumb}
       <span class="rq-card__name">${esc(rq.requestName || 'Previous design')}</span>
       <span class="rq-card__meta">${esc(meta)}</span>
       ${linkHtml}
