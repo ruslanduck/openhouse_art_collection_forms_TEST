@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-08 location price note emphasized';
+const OH_VERSION = '2026-10-09 PDF mockups rendered via proxy';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -588,13 +588,23 @@ function openProofModal(rq) {
   //    для PDF только thumbnails до 512px, оригинал даёт полное разрешение)
   // 2) thumbnails.full / large от Airtable
   // 3) мокап заявки
-  const isDoc = /pdf|postscript|illustrator|tiff/i.test(rq.proofFileType || '');
-  const proxied = rq.proofFileUrl
-    ? CONFIG.IMAGE_PROXY + encodeURIComponent(rq.proofFileUrl) + '&w=2600&output=jpg'
+  // Для PDF/AI/EPS Airtable даёт превью не крупнее 644px (full отсутствует),
+  // поэтому документы всегда рендерим из оригинала через прокси на 2600px —
+  // и для файла пруфа, и для мокапа, если в мокап положили PDF.
+  const DOC = /pdf|postscript|illustrator|tiff/i;
+  const viaProxy = url => url
+    ? CONFIG.IMAGE_PROXY + encodeURIComponent(url) + '&w=2600&output=jpg'
     : '';
 
-  const primary  = (isDoc && proxied) || rq.proofFullUrl || rq.proofThumbUrl
-                   || rq.mockupFull || rq.mockupUrl || '';
+  const proofIsDoc  = DOC.test(rq.proofFileType || '');
+  const mockupIsDoc = DOC.test(rq.mockupType || '');
+
+  const primary =
+       (proofIsDoc  && viaProxy(rq.proofFileUrl))
+    || rq.proofFullUrl || rq.proofThumbUrl
+    || (mockupIsDoc && viaProxy(rq.mockupOrigUrl))
+    || rq.mockupFull || rq.mockupUrl || '';
+
   const fallback = rq.proofFullUrl || rq.proofThumbUrl || rq.mockupFull || rq.mockupUrl || '';
 
   if (primary) {
@@ -768,6 +778,7 @@ function normaliseRequest(rq) {
 
   const mk = Array.isArray(mockupRaw) ? mockupRaw[0] : null;
   const mockupFull = mk?.thumbnails?.full?.url || mk?.thumbnails?.large?.url || mk?.url || '';
+  const mockupType = mk?.type || (/\.(pdf|ai|eps)$/i.test(mk?.filename || '') ? 'application/pdf' : '');
   const fileName = att?.filename || '';
 
   const sentAsLinkRaw = rq.sentAsLink ?? rq['Proof Sent As Link'];
@@ -787,6 +798,8 @@ function normaliseRequest(rq) {
     mockupUrl:     mockup?.url   || '',
     mockupThumb:   mockup?.thumb || '',
     mockupFull:    mockupFull,
+    mockupType:    mockupType,
+    mockupOrigUrl: mk?.url || '',
     proofFileType: firstString(att?.type) || (/\.pdf$/i.test(att?.filename || '') ? 'application/pdf' : ''),
     proofFromVendorFiles: fromVendor,
   };
