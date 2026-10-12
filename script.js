@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-07 reorder: vendor PDF source, hide notes+placement, $3 copy';
+const OH_VERSION = '2026-10-08 location price note emphasized';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -429,7 +429,11 @@ function injectReorderStyles() {
     .loc-item:not(.loc-item--first) {
       border: 1px solid #DDD8CC; border-radius: 6px; background: #FCFBF7;
       padding: 14px 18px 4px; margin-top: 14px; }
-    .loc-hint { margin: 0 0 10px !important; }
+    .loc-price-note { margin: 0 0 14px; padding: 9px 12px;
+                      background: #F2EFE7; border-left: 2px solid #A8432B;
+                      border-radius: 0 3px 3px 0;
+                      font-size: 12px; line-height: 1.45; color: #1A1A1A; }
+    .loc-price-note strong { font-weight: 600; color: #A8432B; }
     .loc-item__head { display: flex; align-items: center; gap: 8px;
                       margin: 0 0 14px; padding-bottom: 10px;
                       border-bottom: 1px solid #EDE9DF; }
@@ -1369,7 +1373,7 @@ function locationHtml(index, loc) {
   // Первая локация выглядит как обычная форма: без рамки, заголовка и подсказки.
   // Дополнительные — в своей рамке, с подсказкой о цене и кнопкой удаления.
   const head = extra ? `
-      <p class="field-hint loc-hint">Each additional location is $3 per unit. You'll receive an invoice soon.</p>
+      <p class="loc-price-note">Each additional location is <strong>$3 per unit</strong>. You'll receive an invoice soon.</p>
       <div class="loc-item__head">
         <span class="loc-title">Location ${n}</span>
         <button type="button" class="loc-remove" data-loc-remove="${loc}"
