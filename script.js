@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-06 reorder: mockup from any mockup lookup';
+const OH_VERSION = '2026-10-07 reorder: vendor PDF source, hide notes+placement, $3 copy';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -421,6 +421,7 @@ function injectReorderStyles() {
                         min-height: 0; }
     .rq-card--compact .rq-card__name { font-size: 14px; }
 
+    .product-card [hidden] { display: none !important; }
     .locations { margin-bottom: 4px; }
     .loc-item--first { margin: 0; }
 
@@ -594,9 +595,11 @@ function openProofModal(rq) {
 
   if (primary) {
     body.innerHTML = `<img id="ohm-img" src="${esc(primary)}" alt="${esc(rq.requestName || 'Proof')}">`;
-    note.textContent = (rq.proofFullUrl || rq.proofFileUrl)
-      ? 'Preview of the approved proof.'
-      : 'Product mockup from this design request.';
+    note.textContent = rq.proofFromVendorFiles
+      ? 'Approved proof file.'
+      : (rq.proofFullUrl || rq.proofFileUrl)
+        ? 'Preview of the approved proof.'
+        : 'Product mockup from this design request.';
 
     // если прокси не отдал картинку — молча падаем на превью Airtable
     const img = document.getElementById('ohm-img');
@@ -731,7 +734,22 @@ function embeddableProofUrl(u) {
 function normaliseRequest(rq) {
   if (!rq || typeof rq !== 'object') return null;
 
-  const attachment = firstAttachment(rq['Unsigned Proof'] ?? rq.unsignedProof);
+  // Файл пруфа: сначала Unsigned Proof (старый формат), иначе утверждённый PDF,
+  // который страница аппрува сама выгружает в Vendor Production Files.
+  // Это полноценный документ — он рендерится чётко, в отличие от сжатого мокапа.
+  const pickPdfFirst = arr => Array.isArray(arr)
+    ? (arr.find(a => /pdf/i.test(a?.type || a?.filename || '')) || arr.find(a => a?.url) || null)
+    : null;
+
+  const unsignedRaw = rq['Unsigned Proof'] ?? rq.unsignedProof;
+  const vendorRaw   = rq['Vendor Production Files'] ?? rq.vendorProductionFiles;
+  const fromVendor  = !firstAttachment(unsignedRaw) && !!firstAttachment(vendorRaw);
+  const proofRaw    = fromVendor ? vendorRaw : unsignedRaw;
+
+  const proofItem  = fromVendor ? pickPdfFirst(vendorRaw) : (Array.isArray(proofRaw) ? proofRaw[0] : null);
+  const attachment = proofItem
+    ? { url: proofItem.url, thumb: proofItem.thumbnails?.large?.url || proofItem.thumbnails?.small?.url || '' }
+    : firstAttachment(proofRaw);
   // Мокап может прийти из поля самой заявки или из лукапа со строки заказа
   // (через связь Digital proof) — берём первое поле с "mockup" в имени,
   // где реально лежит вложение. Так не важно, как назван лукап.
@@ -741,14 +759,12 @@ function normaliseRequest(rq) {
   const mockup = firstAttachment(mockupRaw);
 
   // Airtable рендерит превью и для PDF — берём самое крупное из доступных
-  const att = Array.isArray(rq['Unsigned Proof']) ? rq['Unsigned Proof'][0] : null;
+  const att = proofItem;
   const fullUrl = att?.thumbnails?.full?.url || att?.thumbnails?.large?.url || '';
 
   const mk = Array.isArray(mockupRaw) ? mockupRaw[0] : null;
   const mockupFull = mk?.thumbnails?.full?.url || mk?.thumbnails?.large?.url || mk?.url || '';
-  const fileName = Array.isArray(rq['Unsigned Proof'])
-    ? (rq['Unsigned Proof'][0]?.filename || '')
-    : '';
+  const fileName = att?.filename || '';
 
   const sentAsLinkRaw = rq.sentAsLink ?? rq['Proof Sent As Link'];
 
@@ -767,7 +783,8 @@ function normaliseRequest(rq) {
     mockupUrl:     mockup?.url   || '',
     mockupThumb:   mockup?.thumb || '',
     mockupFull:    mockupFull,
-    proofFileType: firstString(att?.type),
+    proofFileType: firstString(att?.type) || (/\.pdf$/i.test(att?.filename || '') ? 'application/pdf' : ''),
+    proofFromVendorFiles: fromVendor,
   };
 }
 
@@ -1352,7 +1369,7 @@ function locationHtml(index, loc) {
   // Первая локация выглядит как обычная форма: без рамки, заголовка и подсказки.
   // Дополнительные — в своей рамке, с подсказкой о цене и кнопкой удаления.
   const head = extra ? `
-      <p class="field-hint loc-hint">Add a location for each place the artwork should be applied. Additional locations may affect pricing.</p>
+      <p class="field-hint loc-hint">Each additional location is $3 per unit. You'll receive an invoice soon.</p>
       <div class="loc-item__head">
         <span class="loc-title">Location ${n}</span>
         <button type="button" class="loc-remove" data-loc-remove="${loc}"
@@ -1523,7 +1540,7 @@ function initProductCard(card, index) {
 
     // При re-order артворк берётся из прошлого пруфа: файлы, цвет нанесения
     // и placement скрываем, вместо них — выбор прошлого Design Request.
-    // Additional Notes и подтверждение прав остаются.
+    // Additional Notes тоже скрываем; остаётся только подтверждение прав.
     setReorderFieldsHidden(index, isReorder);
 
     if (isReorder) {
@@ -1584,20 +1601,23 @@ function setArtworkFieldsRequired(index, required) {
 
 // При re-order прячем поля загрузки артворка и показываем контейнер выбора
 function setArtworkFieldsHidden(index, hidden) {
-  ['colors', 'embellishment'].forEach(field => {
-    const el = document.getElementById(`field-${field}-${index}`);
+  const toggle = el => {
     if (!el) return;
     if (hidden) el.setAttribute('hidden', '');
     else        el.removeAttribute('hidden');
+  };
+
+  // поля продукта
+  ['colors', 'embellishment', 'notes'].forEach(f =>
+    toggle(document.getElementById(`field-${f}-${index}`)));
+
+  // блок локаций целиком и, на всякий случай, каждое его поле отдельно —
+  // чтобы правила display в style.css не могли перебить скрытие контейнера
+  toggle(document.getElementById(`locations-${index}`));
+  (state.productStates[index]?.locations || []).forEach((_, i) => {
+    toggle(document.getElementById(`field-files-${i}-${index}`));
+    toggle(document.getElementById(`field-placement-${i}-${index}`));
   });
-
-  // Блок локаций целиком
-  const locs = document.getElementById(`locations-${index}`);
-  if (locs) {
-    if (hidden) locs.setAttribute('hidden', '');
-    else        locs.removeAttribute('hidden');
-  }
-
 }
 
 function setReorderFieldsHidden(index, isReorder) {
