@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-09 PDF mockups rendered via proxy';
+const OH_VERSION = '2026-10-21 reorder hides placement';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -1289,17 +1289,6 @@ function buildProductCard(group, index) {
                  autocomplete="off">
           <p class="field-hint">If you know Pantone or Hex values, enter them here. If not, we will match them for you.</p>
           <p class="field-error" id="error-colors-${index}" role="alert" hidden></p>
-        </div>
-
-        <div class="field-group" id="field-placement-${index}">
-          <div class="field-label-row">
-            <label class="field-label" for="input-placement-${index}">Placement Directions</label>
-            <span class="badge badge--required">Mandatory</span>
-          </div>
-          <textarea id="input-placement-${index}" rows="4"
-                    placeholder="Describe where you'd like the artwork placed on the product…"></textarea>
-          <p class="field-hint">Examples: Centered, Maximum Size, Left Chest, Front Center 2" from top.</p>
-          <p class="field-error" id="error-placement-${index}" role="alert" hidden></p>
         </div>
 
         <div class="field-group" id="field-notes-${index}">
