@@ -1,6 +1,6 @@
 // Версия файла — видна в консоли при загрузке страницы.
 // Если в консоли не та версия, что ожидаешь, значит залит старый файл или кеш.
-const OH_VERSION = '2026-10-21 reorder hides placement';
+const OH_VERSION = '2026-10-22 reorder writes chosen proof to placement';
 
 // ─── ENVIRONMENT SWITCH ─────────────────────────────────────────────────────
 // TEST_MODE = true  → пишем только в тестовый сценарий Make + тестовую папку Dropbox
@@ -1346,6 +1346,20 @@ function mdText(str) {
   return String(str || '').trim();
 }
 
+// Текст для Placement Directions при re-order.
+// Пруф отправлен ссылкой (новая версия) — ссылка на страницу пруфа, иначе — на файл пруфа.
+// Ссылки на вложения Airtable живут несколько часов, поэтому страницу пруфа
+// (постоянная ссылка, показывает тот же файл) добавляем всегда.
+function buildReorderPlacement(rq) {
+  const order = rq.orderNumber ? ` (order ${rq.orderNumber})` : '';
+  const lines = [`Re-order — reuse approved proof: ${rq.requestName || 'previous design'}${order}`];
+  const fileUrl = rq.sentAsLink ? '' : rq.proofFileUrl;
+  if (fileUrl) lines.push(`Proof file${rq.proofFileName ? ' (' + rq.proofFileName + ')' : ''}: ${fileUrl}`);
+  if (rq.proofUrl) lines.push(`Proof page: ${rq.proofUrl}`);
+  if (rq.id) lines.push(`Design Request: ${rq.id}`);
+  return lines.join('\n');
+}
+
 // Сводка по локациям для одной длинной текстовой колонки в Airtable.
 // Формат — markdown: при включённом rich text в поле заголовки станут
 // жирными, а ссылки кликабельными; без rich text текст тоже читается.
@@ -2060,7 +2074,11 @@ async function submitProduct(index) {
         .find(rq => rq.id === ps.reorderSelectedId);
 
       const colors          = document.getElementById(`input-colors-${index}`)?.value.trim() || '';
-      const placement       = ps.placement || '';
+      // При re-order поля Placement нет — пишем туда, какой прошлый пруф выбран,
+      // иначе в Artwork submissions непонятно, что клиент повторяет.
+      const placement       = (ps.isReorder && selectedRequest)
+        ? buildReorderPlacement(selectedRequest)
+        : (ps.placement || '');
       const embellishment   = ps.embellishment;
       const additionalNotes = ps.additionalNotes || '';
 
